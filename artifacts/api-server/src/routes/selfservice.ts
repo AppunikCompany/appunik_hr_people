@@ -12,23 +12,14 @@ import {
 } from "@workspace/db";
 import { eq, and, desc, isNull } from "drizzle-orm";
 import { requireAuth } from "../middlewares/authMiddleware";
-
-const PRIVILEGED_ROLES = new Set(["super_admin", "hr_admin", "it_admin", "manager"]);
-
-function canAccessEmployee(req: Request, employeeId: string): boolean {
-  if (!req.user) return false;
-  if (PRIVILEGED_ROLES.has(req.user.role ?? "")) return true;
-  return req.user.id === employeeId;
-}
+import { canReadEmployee } from "../lib/ownership";
 
 const router: IRouter = Router();
 
 router.get("/self-service/profile/:employeeId", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const empId = req.params.employeeId as string;
-    if (!canAccessEmployee(req, empId)) {
-      res.status(403).json({ error: "Access denied" }); return;
-    }
+    if (!(await canReadEmployee(req, res, empId))) return;
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, empId));
     if (!emp) { res.status(404).json({ error: "Employee not found" }); return; }
     res.json(emp);
@@ -40,9 +31,7 @@ router.get("/self-service/profile/:employeeId", requireAuth, async (req: Request
 router.get("/self-service/attendance/:employeeId", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const empId = req.params.employeeId as string;
-    if (!canAccessEmployee(req, empId)) {
-      res.status(403).json({ error: "Access denied" }); return;
-    }
+    if (!(await canReadEmployee(req, res, empId))) return;
 
     const { month, year } = req.query as Record<string, string>;
     const all = await db
@@ -78,9 +67,7 @@ router.get("/self-service/attendance/:employeeId", requireAuth, async (req: Requ
 router.get("/self-service/leave-summary/:employeeId", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const empId = req.params.employeeId as string;
-    if (!canAccessEmployee(req, empId)) {
-      res.status(403).json({ error: "Access denied" }); return;
-    }
+    if (!(await canReadEmployee(req, res, empId))) return;
 
     const year = parseInt((req.query.year as string) ?? String(new Date().getFullYear()));
 
@@ -133,9 +120,7 @@ router.get("/self-service/leave-summary/:employeeId", requireAuth, async (req: R
 router.get("/self-service/assets/:employeeId", requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
     const empId = req.params.employeeId as string;
-    if (!canAccessEmployee(req, empId)) {
-      res.status(403).json({ error: "Access denied" }); return;
-    }
+    if (!(await canReadEmployee(req, res, empId))) return;
 
     const assignments = await db
       .select()

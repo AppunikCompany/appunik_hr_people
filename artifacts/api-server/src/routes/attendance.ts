@@ -9,12 +9,16 @@ import {
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
+import { resolveEmployeeId, canReadEmployee, isPrivileged } from "../lib/ownership";
 
 const router: IRouter = Router();
 
-router.post("/attendance/clock-in", requireAuth, async (req, res) => {
+router.post("/attendance/clock-in", requireAuth, async (req, res): Promise<void> => {
   try {
-    const { employeeId, notes } = req.body as { employeeId: string; notes?: string };
+    const { employeeId: clientId, notes } = req.body as { employeeId?: string; notes?: string };
+    const employeeId = await resolveEmployeeId(req, res, clientId);
+    if (!employeeId) return;
+
     const today = new Date().toISOString().split("T")[0];
     const existing = await db
       .select()
@@ -38,9 +42,12 @@ router.post("/attendance/clock-in", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/attendance/clock-out", requireAuth, async (req, res) => {
+router.post("/attendance/clock-out", requireAuth, async (req, res): Promise<void> => {
   try {
-    const { employeeId, notes } = req.body as { employeeId: string; notes?: string };
+    const { employeeId: clientId, notes } = req.body as { employeeId?: string; notes?: string };
+    const employeeId = await resolveEmployeeId(req, res, clientId);
+    if (!employeeId) return;
+
     const today = new Date().toISOString().split("T")[0];
     const [existing] = await db
       .select()
@@ -65,9 +72,12 @@ router.post("/attendance/clock-out", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/attendance/wfh", requireAuth, async (req, res) => {
+router.post("/attendance/wfh", requireAuth, async (req, res): Promise<void> => {
   try {
-    const { employeeId, notes } = req.body as { employeeId: string; notes?: string };
+    const { employeeId: clientId, notes } = req.body as { employeeId?: string; notes?: string };
+    const employeeId = await resolveEmployeeId(req, res, clientId);
+    if (!employeeId) return;
+
     const today = new Date().toISOString().split("T")[0];
     const existing = await db
       .select()
@@ -89,9 +99,16 @@ router.post("/attendance/wfh", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/attendance/today", requireAuth, async (req, res) => {
+router.get("/attendance/today", requireAuth, async (req, res): Promise<void> => {
   try {
-    const employeeId = (req.query.employeeId as string) ?? "";
+    const clientId = req.query.employeeId as string | undefined;
+    let employeeId: string | null = null;
+    if (isPrivileged(req)) {
+      employeeId = clientId ?? "";
+    } else {
+      employeeId = await resolveEmployeeId(req, res, clientId);
+      if (!employeeId) return;
+    }
     const today = new Date().toISOString().split("T")[0];
     const [record] = await db
       .select()

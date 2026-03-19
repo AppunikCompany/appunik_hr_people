@@ -11,6 +11,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
+import { resolveEmployeeId } from "../lib/ownership";
 
 const router: IRouter = Router();
 
@@ -100,15 +101,18 @@ router.get("/leave/requests", requireAuth, async (req, res) => {
   }
 });
 
-router.post("/leave/requests", requireAuth, async (req, res) => {
+router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
   try {
-    const { employeeId, leaveTypeId, startDate, endDate, reason } = req.body as {
-      employeeId: string;
+    const { employeeId: clientId, leaveTypeId, startDate, endDate, reason } = req.body as {
+      employeeId?: string;
       leaveTypeId: string;
       startDate: string;
       endDate: string;
       reason: string;
     };
+    const employeeId = await resolveEmployeeId(req, res, clientId);
+    if (!employeeId) return;
+
     const start = new Date(startDate);
     const end = new Date(endDate);
     const days = Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1;
