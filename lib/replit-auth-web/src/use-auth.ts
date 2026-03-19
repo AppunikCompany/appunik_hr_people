@@ -1,13 +1,20 @@
 import { useState, useEffect, useCallback } from "react";
-import type { AuthUser } from "@workspace/api-client-react";
 
-export type { AuthUser };
+export interface AuthUser {
+  id: string | null;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  profileImageUrl?: string | null;
+  role: string;
+  employeeId?: string | null;
+}
 
 interface AuthState {
   user: AuthUser | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: () => void;
+  login: (returnTo?: string) => void;
   logout: () => void;
 }
 
@@ -21,11 +28,11 @@ export function useAuth(): AuthState {
     fetch("/api/auth/user", { credentials: "include" })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json() as Promise<{ user: AuthUser | null }>;
+        return res.json() as Promise<AuthUser>;
       })
       .then((data) => {
         if (!cancelled) {
-          setUser(data.user ?? null);
+          setUser(data.id ? data : null);
           setIsLoading(false);
         }
       })
@@ -41,9 +48,9 @@ export function useAuth(): AuthState {
     };
   }, []);
 
-  const login = useCallback(() => {
-    const base = import.meta.env.BASE_URL.replace(/\/+$/, "") || "/";
-    window.location.href = `/api/login?returnTo=${encodeURIComponent(base)}`;
+  const login = useCallback((returnTo?: string) => {
+    const target = returnTo ?? window.location.pathname;
+    window.location.href = `/api/login?returnTo=${encodeURIComponent(target)}`;
   }, []);
 
   const logout = useCallback(() => {
