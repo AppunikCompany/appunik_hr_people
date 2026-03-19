@@ -94,6 +94,7 @@ router.post("/onboarding/tasks/:id/complete", requireAuth, async (req, res) => {
         .from(onboardingTasksTable)
         .where(eq(onboardingTasksTable.checklistId, checklist.id));
       const allDone = allTasks.every((t) => t.isCompleted);
+      fireAutomationEvent({ event: "onboarding.task_completed", employeeId: checklist.employeeId }).catch(console.error);
       if (allDone) {
         fireAutomationEvent({ event: "onboarding.completed", employeeId: checklist.employeeId }).catch(console.error);
       }

@@ -10,6 +10,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { resolveEmployeeId, canReadEmployee, isPrivileged } from "../lib/ownership";
+import { fireAutomationEvent } from "../lib/automations";
 
 const router: IRouter = Router();
 
@@ -36,6 +37,9 @@ router.post("/attendance/clock-in", requireAuth, async (req, res): Promise<void>
       .insert(attendanceRecordsTable)
       .values({ employeeId, date: today, clockIn, type: "wfo", isLate, isHalfDay: false, notes })
       .returning();
+    if (isLate) {
+      fireAutomationEvent({ event: "attendance.late_arrival", employeeId, variables: { date: today } }).catch(console.error);
+    }
     res.status(201).json(record);
   } catch (e) {
     res.status(500).json({ error: String(e) });

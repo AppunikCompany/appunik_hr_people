@@ -168,10 +168,18 @@ router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin
         )
       );
     if (bal) {
+      const newBalance = Math.max(0, bal.balance - request.days);
       await db
         .update(leaveBalancesTable)
-        .set({ used: bal.used + request.days, balance: Math.max(0, bal.balance - request.days) })
+        .set({ used: bal.used + request.days, balance: newBalance })
         .where(eq(leaveBalancesTable.id, bal.id));
+      if (newBalance <= 2) {
+        fireAutomationEvent({
+          event: "leave.balance_low",
+          employeeId: request.employeeId,
+          variables: { leaveType: lt?.name ?? "", balance: String(newBalance) },
+        }).catch(console.error);
+      }
     }
 
     fireAutomationEvent({

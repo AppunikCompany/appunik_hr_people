@@ -5,8 +5,12 @@ import {
   automationLogsTable,
   emailTemplatesTable,
   employeesTable,
+  attendanceRecordsTable,
+  leaveRequestsTable,
+  kraAssignmentsTable,
+  reviewCyclesTable,
 } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 
 const resend = process.env.RESEND_API_KEY
   ? new Resend(process.env.RESEND_API_KEY)
@@ -186,6 +190,71 @@ export async function runScheduledAutomations(ctx: ScheduledJobContext): Promise
           variables: { daysRemaining: "7" },
         });
       }
+    }
+  }
+
+  // attendance.absent_no_leave: fire for employees with no attendance record yesterday and no approved leave covering yesterday
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  const dayOfWeek = yesterday.getDay();
+  if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+    const attendedYesterday = await db
+      .select({ employeeId: attendanceRecordsTable.employeeId })
+      .from(attendanceRecordsTable)
+      .where(eq(attendanceRecordsTable.date, yesterdayStr));
+    const attendedIds = new Set(attendedYesterday.map((r) => r.employeeId));
+
+    for (const emp of employees) {
+      if (attendedIds.has(emp.id)) continue;
+      const onLeave = await db
+        .select()
+        .from(leaveRequestsTable)
+        .where(
+          and(
+            eq(leaveRequestsTable.employeeId, emp.id),
+            eq(leaveRequestsTable.status, "approved"),
+          )
+        );
+      const coveredByLeave = onLeave.some(
+        (lr) => lr.startDate <= yesterdayStr && lr.endDate >= yesterdayStr,
+      );
+      if (!coveredByLeave) {
+        await fireAutomationEvent({
+          event: "attendance.absent_no_leave",
+          employeeId: emp.id,
+          variables: { date: yesterdayStr },
+        });
+      }
+    }
+  }
+
+  // kra.deadline_approaching: fire for assignments with open review cycles closing in 7 days
+  const in7days = new Date(today);
+  in7days.setDate(in7days.getDate() + 7);
+  const in7daysStr = in7days.toISOString().split("T")[0];
+  const closingCycles = await db
+    .select()
+    .from(reviewCyclesTable)
+    .where(and(eq(reviewCyclesTable.closeDate, in7daysStr), eq(reviewCyclesTable.status, "open")));
+
+  if (closingCycles.length > 0) {
+    const cycleIds = closingCycles.map((c) => c.id);
+    const pendingAssignments = await db
+      .select()
+      .from(kraAssignmentsTable)
+      .where(
+        and(
+          inArray(kraAssignmentsTable.cycleId, cycleIds),
+          eq(kraAssignmentsTable.status, "pending"),
+        ),
+      );
+    for (const assignment of pendingAssignments) {
+      await fireAutomationEvent({
+        event: "kra.deadline_approaching",
+        employeeId: assignment.employeeId,
+        variables: { kraTitle: assignment.kraTitle, daysRemaining: "7" },
+      });
     }
   }
 }
