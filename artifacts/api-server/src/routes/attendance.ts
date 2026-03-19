@@ -8,12 +8,13 @@ import {
   departmentsTable,
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
+import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
 
-router.post("/attendance/clock-in", async (req, res) => {
+router.post("/attendance/clock-in", requireAuth, async (req, res) => {
   try {
-    const { employeeId, notes } = req.body;
+    const { employeeId, notes } = req.body as { employeeId: string; notes?: string };
     const today = new Date().toISOString().split("T")[0];
     const existing = await db
       .select()
@@ -21,7 +22,7 @@ router.post("/attendance/clock-in", async (req, res) => {
       .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.date, today)));
 
     if (existing.length > 0) {
-      return res.status(400).json({ error: "Already clocked in today" });
+      res.status(400).json({ error: "Already clocked in today" });
     }
 
     const clockIn = new Date();
@@ -36,16 +37,16 @@ router.post("/attendance/clock-in", async (req, res) => {
   }
 });
 
-router.post("/attendance/clock-out", async (req, res) => {
+router.post("/attendance/clock-out", requireAuth, async (req, res) => {
   try {
-    const { employeeId, notes } = req.body;
+    const { employeeId, notes } = req.body as { employeeId: string; notes?: string };
     const today = new Date().toISOString().split("T")[0];
     const [existing] = await db
       .select()
       .from(attendanceRecordsTable)
       .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.date, today)));
 
-    if (!existing) return res.status(404).json({ error: "No clock-in found for today" });
+    if (!existing) { res.status(404).json({ error: "No clock-in found for today" }); return; }
 
     const clockOut = new Date();
     const hoursWorked = existing.clockIn
@@ -63,9 +64,9 @@ router.post("/attendance/clock-out", async (req, res) => {
   }
 });
 
-router.post("/attendance/wfh", async (req, res) => {
+router.post("/attendance/wfh", requireAuth, async (req, res) => {
   try {
-    const { employeeId, notes } = req.body;
+    const { employeeId, notes } = req.body as { employeeId: string; notes?: string };
     const today = new Date().toISOString().split("T")[0];
     const existing = await db
       .select()
@@ -73,7 +74,7 @@ router.post("/attendance/wfh", async (req, res) => {
       .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.date, today)));
 
     if (existing.length > 0) {
-      return res.status(400).json({ error: "Already marked attendance today" });
+      res.status(400).json({ error: "Already marked attendance today" });
     }
 
     const [record] = await db
@@ -86,7 +87,7 @@ router.post("/attendance/wfh", async (req, res) => {
   }
 });
 
-router.get("/attendance/today", async (req, res) => {
+router.get("/attendance/today", requireAuth, async (req, res) => {
   try {
     const employeeId = (req.query.employeeId as string) ?? "";
     const today = new Date().toISOString().split("T")[0];
@@ -100,7 +101,7 @@ router.get("/attendance/today", async (req, res) => {
   }
 });
 
-router.get("/attendance/monthly", async (req, res) => {
+router.get("/attendance/monthly", requireAuth, async (req, res) => {
   try {
     const { month, year, employeeId } = req.query as Record<string, string>;
     const all = await db.select().from(attendanceRecordsTable);
@@ -117,7 +118,7 @@ router.get("/attendance/monthly", async (req, res) => {
   }
 });
 
-router.get("/attendance/team", async (_req, res) => {
+router.get("/attendance/team", requireAuth, async (_req, res) => {
   try {
     const today = new Date().toISOString().split("T")[0];
     const employees = await db.select().from(employeesTable).where(eq(employeesTable.status, "active"));
@@ -148,7 +149,7 @@ router.get("/attendance/team", async (_req, res) => {
   }
 });
 
-router.post("/attendance/overtime", async (req, res) => {
+router.post("/attendance/overtime", requireAuth, async (req, res) => {
   try {
     const [log] = await db.insert(overtimeLogsTable).values(req.body).returning();
     res.status(201).json(log);
@@ -157,7 +158,7 @@ router.post("/attendance/overtime", async (req, res) => {
   }
 });
 
-router.get("/holidays", async (req, res) => {
+router.get("/holidays", requireAuth, async (req, res) => {
   try {
     const { year } = req.query as Record<string, string>;
     let holidays = await db.select().from(holidaysTable);
@@ -168,7 +169,7 @@ router.get("/holidays", async (req, res) => {
   }
 });
 
-router.post("/holidays", async (req, res) => {
+router.post("/holidays", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [holiday] = await db.insert(holidaysTable).values(req.body).returning();
     res.status(201).json(holiday);
@@ -177,7 +178,7 @@ router.post("/holidays", async (req, res) => {
   }
 });
 
-router.delete("/holidays/:id", async (req, res) => {
+router.delete("/holidays/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     await db.delete(holidaysTable).where(eq(holidaysTable.id, req.params.id));
     res.status(204).send();

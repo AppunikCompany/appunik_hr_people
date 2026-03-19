@@ -11,10 +11,11 @@ import {
   employeesTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
 
-router.get("/admin/departments", async (_req, res) => {
+router.get("/admin/departments", requireAuth, async (_req, res) => {
   try {
     const depts = await db.select().from(departmentsTable);
     const enriched = await Promise.all(
@@ -33,7 +34,7 @@ router.get("/admin/departments", async (_req, res) => {
   }
 });
 
-router.post("/admin/departments", async (req, res) => {
+router.post("/admin/departments", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [dept] = await db.insert(departmentsTable).values(req.body).returning();
     res.status(201).json({ ...dept, headName: null });
@@ -42,17 +43,17 @@ router.post("/admin/departments", async (req, res) => {
   }
 });
 
-router.patch("/admin/departments/:id", async (req, res) => {
+router.patch("/admin/departments/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [dept] = await db.update(departmentsTable).set(req.body).where(eq(departmentsTable.id, req.params.id)).returning();
-    if (!dept) return res.status(404).json({ error: "Not found" });
+    if (!dept) { res.status(404).json({ error: "Not found" }); return; }
     res.json({ ...dept, headName: null });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-router.delete("/admin/departments/:id", async (req, res) => {
+router.delete("/admin/departments/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     await db.delete(departmentsTable).where(eq(departmentsTable.id, req.params.id));
     res.status(204).send();
@@ -61,7 +62,7 @@ router.delete("/admin/departments/:id", async (req, res) => {
   }
 });
 
-router.get("/admin/designations", async (_req, res) => {
+router.get("/admin/designations", requireAuth, async (_req, res) => {
   try {
     const designations = await db.select().from(designationsTable);
     const depts = await db.select().from(departmentsTable);
@@ -76,7 +77,7 @@ router.get("/admin/designations", async (_req, res) => {
   }
 });
 
-router.post("/admin/designations", async (req, res) => {
+router.post("/admin/designations", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [desig] = await db.insert(designationsTable).values(req.body).returning();
     res.status(201).json({ ...desig, departmentName: null });
@@ -85,17 +86,17 @@ router.post("/admin/designations", async (req, res) => {
   }
 });
 
-router.patch("/admin/designations/:id", async (req, res) => {
+router.patch("/admin/designations/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [desig] = await db.update(designationsTable).set(req.body).where(eq(designationsTable.id, req.params.id)).returning();
-    if (!desig) return res.status(404).json({ error: "Not found" });
+    if (!desig) { res.status(404).json({ error: "Not found" }); return; }
     res.json({ ...desig, departmentName: null });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-router.delete("/admin/designations/:id", async (req, res) => {
+router.delete("/admin/designations/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     await db.delete(designationsTable).where(eq(designationsTable.id, req.params.id));
     res.status(204).send();
@@ -104,7 +105,7 @@ router.delete("/admin/designations/:id", async (req, res) => {
   }
 });
 
-router.get("/admin/company-profile", async (_req, res) => {
+router.get("/admin/company-profile", requireAuth, async (_req, res): Promise<void> => {
   try {
     const [profile] = await db.select().from(companyProfileTable);
     if (!profile) {
@@ -112,7 +113,8 @@ router.get("/admin/company-profile", async (_req, res) => {
         .insert(companyProfileTable)
         .values({ name: "My Company" })
         .returning();
-      return res.json(created);
+      res.json(created);
+      return;
     }
     res.json(profile);
   } catch (e) {
@@ -120,12 +122,13 @@ router.get("/admin/company-profile", async (_req, res) => {
   }
 });
 
-router.patch("/admin/company-profile", async (req, res) => {
+router.patch("/admin/company-profile", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
     const [existing] = await db.select().from(companyProfileTable);
     if (!existing) {
       const [created] = await db.insert(companyProfileTable).values(req.body).returning();
-      return res.json(created);
+      res.json(created);
+      return;
     }
     const [updated] = await db
       .update(companyProfileTable)
@@ -138,7 +141,7 @@ router.patch("/admin/company-profile", async (req, res) => {
   }
 });
 
-router.get("/admin/leave-policies", async (_req, res) => {
+router.get("/admin/leave-policies", requireAuth, async (_req, res) => {
   try {
     const policies = await db.select().from(leavePoliciesTable);
     const types = await db.select().from(leaveTypesTable);
@@ -153,7 +156,7 @@ router.get("/admin/leave-policies", async (_req, res) => {
   }
 });
 
-router.post("/admin/leave-policies", async (req, res) => {
+router.post("/admin/leave-policies", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [policy] = await db.insert(leavePoliciesTable).values(req.body).returning();
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, policy.leaveTypeId));
@@ -163,10 +166,10 @@ router.post("/admin/leave-policies", async (req, res) => {
   }
 });
 
-router.patch("/admin/leave-policies/:id", async (req, res) => {
+router.patch("/admin/leave-policies/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [policy] = await db.update(leavePoliciesTable).set(req.body).where(eq(leavePoliciesTable.id, req.params.id)).returning();
-    if (!policy) return res.status(404).json({ error: "Not found" });
+    if (!policy) { res.status(404).json({ error: "Not found" }); return; }
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, policy.leaveTypeId));
     res.json({ ...policy, leaveTypeName: lt?.name ?? "" });
   } catch (e) {
@@ -174,7 +177,7 @@ router.patch("/admin/leave-policies/:id", async (req, res) => {
   }
 });
 
-router.get("/admin/notification-settings", async (_req, res) => {
+router.get("/admin/notification-settings", requireAuth, async (_req, res) => {
   try {
     const settings = await db.select().from(notificationSettingsTable);
     res.json(settings);
@@ -183,22 +186,22 @@ router.get("/admin/notification-settings", async (_req, res) => {
   }
 });
 
-router.patch("/admin/notification-settings", async (req, res) => {
+router.patch("/admin/notification-settings", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const { eventType, isEnabled } = req.body;
+    const { eventType, isEnabled } = req.body as { eventType: string; isEnabled: boolean };
     const [setting] = await db
       .update(notificationSettingsTable)
       .set({ isEnabled })
       .where(eq(notificationSettingsTable.eventType, eventType))
       .returning();
-    if (!setting) return res.status(404).json({ error: "Not found" });
+    if (!setting) { res.status(404).json({ error: "Not found" }); return; }
     res.json(setting);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-router.get("/admin/financial-year", async (_req, res) => {
+router.get("/admin/financial-year", requireAuth, async (_req, res): Promise<void> => {
   try {
     const [config] = await db.select().from(financialYearConfigTable);
     if (!config) {
@@ -206,7 +209,8 @@ router.get("/admin/financial-year", async (_req, res) => {
         .insert(financialYearConfigTable)
         .values({ startMonth: 4, startDay: 1, endMonth: 3, endDay: 31, currentYear: "2025-26" })
         .returning();
-      return res.json(created);
+      res.json(created);
+      return;
     }
     res.json(config);
   } catch (e) {
@@ -214,12 +218,13 @@ router.get("/admin/financial-year", async (_req, res) => {
   }
 });
 
-router.patch("/admin/financial-year", async (req, res) => {
+router.patch("/admin/financial-year", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
     const [existing] = await db.select().from(financialYearConfigTable);
     if (!existing) {
       const [created] = await db.insert(financialYearConfigTable).values(req.body).returning();
-      return res.json(created);
+      res.json(created);
+      return;
     }
     const [updated] = await db
       .update(financialYearConfigTable)

@@ -7,8 +7,9 @@ import {
   departmentsTable,
   designationsTable,
 } from "@workspace/db";
-import { eq, ilike, and, or } from "drizzle-orm";
-import { requireAuth } from "../middlewares/authMiddleware";
+import { eq } from "drizzle-orm";
+import { requireAuth, requireRole } from "../middlewares/authMiddleware";
+import { fireAutomationEvent } from "../lib/automations";
 
 const router: IRouter = Router();
 
@@ -46,9 +47,9 @@ async function enrichEmployee(emp: typeof employeesTable.$inferSelect) {
   return { ...emp, departmentName, designationName, reportingManagerName };
 }
 
-router.get("/employees", async (req, res) => {
+router.get("/employees", requireAuth, async (req, res) => {
   try {
-    const { search, department, status, designation } = req.query as Record<string, string>;
+    const { search, department, status } = req.query as Record<string, string>;
     let employees = await db.select().from(employeesTable);
 
     if (status) employees = employees.filter((e) => e.status === status);
@@ -72,44 +73,48 @@ router.get("/employees", async (req, res) => {
   }
 });
 
-router.post("/employees", async (req, res) => {
+router.post("/employees", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const code = await nextEmployeeCode();
     const [employee] = await db
       .insert(employeesTable)
       .values({ ...req.body, employeeCode: code })
       .returning();
-    res.status(201).json(await enrichEmployee(employee));
+    const enriched = await enrichEmployee(employee);
+
+    fireAutomationEvent({ event: "employee.created", employeeId: employee.id }).catch(console.error);
+
+    res.status(201).json(enriched);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-router.get("/employees/:id", async (req, res) => {
+router.get("/employees/:id", requireAuth, async (req, res) => {
   try {
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, req.params.id));
-    if (!emp) return res.status(404).json({ error: "Not found" });
+    if (!emp) { res.status(404).json({ error: "Not found" }); return; }
     res.json(await enrichEmployee(emp));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-router.patch("/employees/:id", async (req, res) => {
+router.patch("/employees/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [emp] = await db
       .update(employeesTable)
       .set(req.body)
       .where(eq(employeesTable.id, req.params.id))
       .returning();
-    if (!emp) return res.status(404).json({ error: "Not found" });
+    if (!emp) { res.status(404).json({ error: "Not found" }); return; }
     res.json(await enrichEmployee(emp));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-router.delete("/employees/:id", async (req, res) => {
+router.delete("/employees/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     await db.delete(employeesTable).where(eq(employeesTable.id, req.params.id));
     res.status(204).send();
@@ -118,7 +123,7 @@ router.delete("/employees/:id", async (req, res) => {
   }
 });
 
-router.get("/employees/:id/documents", async (req, res) => {
+router.get("/employees/:id/documents", requireAuth, async (req, res) => {
   try {
     const docs = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.employeeId, req.params.id));
     res.json(docs);
@@ -127,7 +132,7 @@ router.get("/employees/:id/documents", async (req, res) => {
   }
 });
 
-router.post("/employees/:id/documents", async (req, res) => {
+router.post("/employees/:id/documents", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [doc] = await db
       .insert(employeeDocumentsTable)
@@ -139,7 +144,7 @@ router.post("/employees/:id/documents", async (req, res) => {
   }
 });
 
-router.get("/employees/:id/history", async (req, res) => {
+router.get("/employees/:id/history", requireAuth, async (req, res) => {
   try {
     const history = await db.select().from(employeeHistoryTable).where(eq(employeeHistoryTable.employeeId, req.params.id));
     res.json(history);
@@ -148,7 +153,7 @@ router.get("/employees/:id/history", async (req, res) => {
   }
 });
 
-router.post("/employees/:id/history", async (req, res) => {
+router.post("/employees/:id/history", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [entry] = await db
       .insert(employeeHistoryTable)
@@ -160,7 +165,7 @@ router.post("/employees/:id/history", async (req, res) => {
   }
 });
 
-router.get("/org-chart", async (_req, res) => {
+router.get("/org-chart", requireAuth, async (_req, res) => {
   try {
     const employees = await db.select().from(employeesTable).where(eq(employeesTable.status, "active"));
     const enriched = await Promise.all(employees.map(enrichEmployee));

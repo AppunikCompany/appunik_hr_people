@@ -2,7 +2,7 @@
 
 ## Overview
 
-pnpm workspace monorepo using TypeScript. Each package manages its own dependencies.
+pnpm workspace monorepo using TypeScript. This is a complete HR Management System for TechNova Solutions Pvt. Ltd., a 50-person IT company (hybrid WFO+WFH).
 
 ## Stack
 
@@ -15,82 +15,132 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - **Validation**: Zod (`zod/v4`), `drizzle-zod`
 - **API codegen**: Orval (from OpenAPI spec)
 - **Build**: esbuild (CJS bundle)
+- **Frontend**: React + Vite + Tailwind CSS + shadcn/ui + Radix UI
+- **Auth**: Replit OIDC (openid-client with PKCE)
+- **Email**: Resend API (automation engine)
 
 ## Structure
 
 ```text
 artifacts-monorepo/
-├── artifacts/              # Deployable applications
-│   └── api-server/         # Express API server
-├── lib/                    # Shared libraries
+├── artifacts/
+│   ├── api-server/         # Express API server (port 8080)
+│   └── hr-system/          # React+Vite frontend (port from $PORT)
+├── lib/
 │   ├── api-spec/           # OpenAPI spec + Orval codegen config
 │   ├── api-client-react/   # Generated React Query hooks
-│   ├── api-zod/            # Generated Zod schemas from OpenAPI
+│   ├── api-zod/            # Zod schemas (auth + generated)
 │   └── db/                 # Drizzle ORM schema + DB connection
-├── scripts/                # Utility scripts (single workspace package)
-│   └── src/                # Individual .ts scripts, run via `pnpm --filter @workspace/scripts run <script>`
-├── pnpm-workspace.yaml     # pnpm workspace (artifacts/*, lib/*, lib/integrations/*, scripts)
-├── tsconfig.base.json      # Shared TS options (composite, bundler resolution, es2022)
-├── tsconfig.json           # Root TS project references
-└── package.json            # Root package with hoisted devDeps
+├── scripts/                # Utility scripts
+├── pnpm-workspace.yaml
+├── tsconfig.base.json
+└── tsconfig.json
+```
+
+## HR System Modules
+
+11 modules implemented:
+1. **Employee Management** — Directory, profiles, org chart (50 seeded employees)
+2. **Attendance & WFH Tracking** — Clock in/out, WFO/WFH mode, team view, holidays
+3. **Leave Management** — Apply/approve/reject, leave balances, calendar, comp-off
+4. **Onboarding** — Checklists per employee, task tracking
+5. **Employee Self-Service** — Dashboard, personal attendance/leave
+6. **KRA/Performance** — KRA assignments, review cycles, templates, scoring
+7. **Asset Management** — 45 seeded assets, assignment/return
+8. **Reports & Analytics** — Headcount, attendance, attrition reports
+9. **Admin & Configuration** — Departments, designations, leave policies, company profile, financial year
+10. **Automations** — 20 email automation rules via Resend (`fireAutomationEvent()`)
+11. **Settings** — Notification settings, company config
+
+## Design System
+
+- **Font**: Inter
+- **Palette**: `#111827` (near-black), `#2563EB` (blue), `#F9FAFB` (off-white)
+- **No gradients**, `shadow-sm` max, `rounded-lg` max
+- **Status pills**: colored dot + text
+- **Sidebar**: white bg, `border-l-2 border-primary` on active item
+- **Breadcrumb** on every page
+
+## Roles (RBAC)
+
+- `super_admin`, `hr_admin`, `it_admin`, `manager`, `employee`
+- All routes protected by `requireAuth` middleware
+- Write routes use `requireRole(...)` to restrict by role
+- Session stored in PostgreSQL `sessions` table via `sessionStore`
+
+## Auth Flow
+
+- GET `/api/login` → Replit OIDC with PKCE
+- GET `/api/callback` → exchanges code, upserts user, creates session
+- GET `/api/logout` → clears session, redirects to Replit end_session
+- GET `/api/auth/user` → returns `{ id, role, firstName, ... }` or `{ id: null, role: "guest" }`
+- Frontend shows login screen when `user.id === null`
+
+## Automations
+
+- `artifacts/api-server/src/lib/automations.ts`
+- `fireAutomationEvent(event, payload)` — dispatches emails for 12 event types
+- `runScheduledAutomations()` — birthday/work-anniversary crons
+- Uses Resend API (`RESEND_API_KEY` env var required for email sending)
+- 20 seeded rules + email templates in DB
+
+## Key Files
+
+```
+artifacts/api-server/src/
+  app.ts                        # Express app, global authMiddleware
+  index.ts                      # Entry point
+  middlewares/authMiddleware.ts # requireAuth, requireRole(), req.user
+  lib/auth.ts                   # OIDC config, session helpers
+  lib/automations.ts            # Automation engine (Resend)
+  routes/
+    auth.ts                     # /login /callback /logout /auth/user
+    employees.ts
+    attendance.ts
+    leave.ts
+    onboarding.ts
+    assets.ts
+    kra.ts
+    reports.ts
+    automations.ts
+    admin.ts
+
+artifacts/hr-system/src/
+  App.tsx                       # AuthGate → LoginPage | Router
+  components/Layout.tsx         # Sidebar + breadcrumb
+  hooks/useApi.ts               # React Query hooks for all endpoints
+  pages/                        # Dashboard, Employees, Leave, etc.
+
+lib/db/src/schema/
+  auth.ts                       # usersTable (with role), sessionsTable
+  employees.ts, leave.ts, etc.  # Full schema
+
+lib/api-zod/src/
+  index.ts                      # Exports ./generated/api and ./auth only
+  auth.ts                       # AuthUser type with role
 ```
 
 ## TypeScript & Composite Projects
 
-Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references. This means:
+Every package extends `tsconfig.base.json` which sets `composite: true`. The root `tsconfig.json` lists all packages as project references.
 
-- **Always typecheck from the root** — run `pnpm run typecheck` (which runs `tsc --build --emitDeclarationOnly`). This builds the full dependency graph so that cross-package imports resolve correctly. Running `tsc` inside a single package will fail if its dependencies haven't been built yet.
-- **`emitDeclarationOnly`** — we only emit `.d.ts` files during typecheck; actual JS bundling is handled by esbuild/tsx/vite...etc, not `tsc`.
-- **Project references** — when package A depends on package B, A's `tsconfig.json` must list B in its `references` array. `tsc --build` uses this to determine build order and skip up-to-date packages.
+- **Always typecheck from the root** — run `pnpm run typecheck`
+- **`emitDeclarationOnly`** — only `.d.ts` files during typecheck
+- **TS7030 fix pattern**: use `if (!x) { res.status(404).json({...}); return; }` not `return res.xxx()`; async handlers need `: Promise<void>` annotation
 
 ## Root Scripts
 
-- `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
+- `pnpm run build` — runs `typecheck` first, then recursively builds all packages
 - `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
 
-## Packages
+## Database
 
-### `artifacts/api-server` (`@workspace/api-server`)
+- Seeded: 50 employees, 45 assets, 184 leave balances, 20 automation rules/templates
+- Schema push: `pnpm --filter @workspace/db run push`
+- Company: TechNova Solutions Pvt. Ltd., Bengaluru
 
-Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` for request and response validation and `@workspace/db` for persistence.
+## Environment Variables
 
-- Entry: `src/index.ts` — reads `PORT`, starts Express
-- App setup: `src/app.ts` — mounts CORS, JSON/urlencoded parsing, routes at `/api`
-- Routes: `src/routes/index.ts` mounts sub-routers; `src/routes/health.ts` exposes `GET /health` (full path: `/api/health`)
-- Depends on: `@workspace/db`, `@workspace/api-zod`
-- `pnpm --filter @workspace/api-server run dev` — run the dev server
-- `pnpm --filter @workspace/api-server run build` — production esbuild bundle (`dist/index.cjs`)
-- Build bundles an allowlist of deps (express, cors, pg, drizzle-orm, zod, etc.) and externalizes the rest
-
-### `lib/db` (`@workspace/db`)
-
-Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client instance and schema models.
-
-- `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
-- `src/schema/index.ts` — barrel re-export of all models
-- `src/schema/<modelname>.ts` — table definitions with `drizzle-zod` insert schemas (no models definitions exist right now)
-- `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`, automatically provided by Replit)
-- Exports: `.` (pool, db, schema), `./schema` (schema only)
-
-Production migrations are handled by Replit when publishing. In development, we just use `pnpm --filter @workspace/db run push`, and we fallback to `pnpm --filter @workspace/db run push-force`.
-
-### `lib/api-spec` (`@workspace/api-spec`)
-
-Owns the OpenAPI 3.1 spec (`openapi.yaml`) and the Orval config (`orval.config.ts`). Running codegen produces output into two sibling packages:
-
-1. `lib/api-client-react/src/generated/` — React Query hooks + fetch client
-2. `lib/api-zod/src/generated/` — Zod schemas
-
-Run codegen: `pnpm --filter @workspace/api-spec run codegen`
-
-### `lib/api-zod` (`@workspace/api-zod`)
-
-Generated Zod schemas from the OpenAPI spec (e.g. `HealthCheckResponse`). Used by `api-server` for response validation.
-
-### `lib/api-client-react` (`@workspace/api-client-react`)
-
-Generated React Query hooks and fetch client from the OpenAPI spec (e.g. `useHealthCheck`, `healthCheck`).
-
-### `scripts` (`@workspace/scripts`)
-
-Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+- `DATABASE_URL` — provided by Replit PostgreSQL
+- `RESEND_API_KEY` — required for automation emails
+- `REPL_ID`, `REPLIT_DOMAINS` — provided by Replit (used for OIDC)

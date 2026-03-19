@@ -7,6 +7,8 @@ import {
   employeesTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { requireAuth, requireRole } from "../middlewares/authMiddleware";
+import { fireAutomationEvent } from "../lib/automations";
 
 const router: IRouter = Router();
 
@@ -34,7 +36,7 @@ async function enrichAsset(asset: typeof assetsTable.$inferSelect) {
   };
 }
 
-router.get("/assets/categories", async (_req, res) => {
+router.get("/assets/categories", requireAuth, async (_req, res) => {
   try {
     const cats = await db.select().from(assetCategoriesTable);
     res.json(cats);
@@ -43,7 +45,7 @@ router.get("/assets/categories", async (_req, res) => {
   }
 });
 
-router.post("/assets/categories", async (req, res) => {
+router.post("/assets/categories", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res) => {
   try {
     const [cat] = await db.insert(assetCategoriesTable).values(req.body).returning();
     res.status(201).json(cat);
@@ -52,7 +54,7 @@ router.post("/assets/categories", async (req, res) => {
   }
 });
 
-router.get("/assets", async (req, res) => {
+router.get("/assets", requireAuth, async (req, res) => {
   try {
     const { status, category, assignedTo } = req.query as Record<string, string>;
     let assets = await db.select().from(assetsTable);
@@ -66,7 +68,7 @@ router.get("/assets", async (req, res) => {
   }
 });
 
-router.post("/assets", async (req, res) => {
+router.post("/assets", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res) => {
   try {
     const code = await nextAssetCode();
     const [asset] = await db.insert(assetsTable).values({ ...req.body, assetCode: code, status: "available" }).returning();
@@ -76,29 +78,29 @@ router.post("/assets", async (req, res) => {
   }
 });
 
-router.get("/assets/:id", async (req, res) => {
+router.get("/assets/:id", requireAuth, async (req, res) => {
   try {
     const [asset] = await db.select().from(assetsTable).where(eq(assetsTable.id, req.params.id));
-    if (!asset) return res.status(404).json({ error: "Not found" });
+    if (!asset) { res.status(404).json({ error: "Not found" }); return; }
     res.json(await enrichAsset(asset));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-router.patch("/assets/:id", async (req, res) => {
+router.patch("/assets/:id", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res) => {
   try {
     const [asset] = await db.update(assetsTable).set(req.body).where(eq(assetsTable.id, req.params.id)).returning();
-    if (!asset) return res.status(404).json({ error: "Not found" });
+    if (!asset) { res.status(404).json({ error: "Not found" }); return; }
     res.json(await enrichAsset(asset));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-router.post("/assets/:id/assign", async (req, res) => {
+router.post("/assets/:id/assign", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res) => {
   try {
-    const { employeeId, notes } = req.body;
+    const { employeeId, notes } = req.body as { employeeId: string; notes?: string };
     const now = new Date();
 
     const [asset] = await db
@@ -107,12 +109,18 @@ router.post("/assets/:id/assign", async (req, res) => {
       .where(eq(assetsTable.id, req.params.id))
       .returning();
 
-    if (!asset) return res.status(404).json({ error: "Not found" });
+    if (!asset) { res.status(404).json({ error: "Not found" }); return; }
 
     const [assignment] = await db
       .insert(assetAssignmentsTable)
       .values({ assetId: req.params.id, employeeId, notes })
       .returning();
+
+    fireAutomationEvent({
+      event: "asset.assigned",
+      employeeId,
+      variables: { assetName: asset.name, assetCode: asset.assetCode },
+    }).catch(console.error);
 
     res.json(assignment);
   } catch (e) {
@@ -120,16 +128,29 @@ router.post("/assets/:id/assign", async (req, res) => {
   }
 });
 
-router.post("/assets/:id/return", async (req, res) => {
+router.post("/assets/:id/return", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res) => {
   try {
-    const { condition, notes } = req.body;
+    const { condition, notes } = req.body as { condition?: string; notes?: string };
+
+    const [existing] = await db.select().from(assetsTable).where(eq(assetsTable.id, req.params.id));
+    const prevEmployeeId = existing?.assignedToId;
+
     const [asset] = await db
       .update(assetsTable)
       .set({ status: "available", assignedToId: null, assignedAt: null, condition: condition ?? undefined })
       .where(eq(assetsTable.id, req.params.id))
       .returning();
 
-    if (!asset) return res.status(404).json({ error: "Not found" });
+    if (!asset) { res.status(404).json({ error: "Not found" }); return; }
+
+    if (prevEmployeeId) {
+      fireAutomationEvent({
+        event: "asset.returned",
+        employeeId: prevEmployeeId,
+        variables: { assetName: asset.name, assetCode: asset.assetCode },
+      }).catch(console.error);
+    }
+
     res.json(await enrichAsset(asset));
   } catch (e) {
     res.status(500).json({ error: String(e) });

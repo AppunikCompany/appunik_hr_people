@@ -6,6 +6,8 @@ import {
   employeesTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { requireAuth, requireRole } from "../middlewares/authMiddleware";
+import { fireAutomationEvent } from "../lib/automations";
 
 const router: IRouter = Router();
 
@@ -29,7 +31,7 @@ async function buildChecklist(checklist: typeof onboardingChecklistsTable.$infer
   };
 }
 
-router.get("/onboarding/checklists", async (req, res) => {
+router.get("/onboarding/checklists", requireAuth, async (req, res) => {
   try {
     const { employeeId } = req.query as Record<string, string>;
     let checklists = await db.select().from(onboardingChecklistsTable);
@@ -41,17 +43,20 @@ router.get("/onboarding/checklists", async (req, res) => {
   }
 });
 
-router.post("/onboarding/checklists", async (req, res) => {
+router.post("/onboarding/checklists", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const { employeeId, tasks } = req.body;
+    const { employeeId, tasks } = req.body as {
+      employeeId: string;
+      tasks?: Array<{ title: string; assignedTo: string; assignedRole: string; dueDate?: string }>;
+    };
     const [checklist] = await db
       .insert(onboardingChecklistsTable)
       .values({ employeeId })
       .returning();
 
-    if (tasks?.length > 0) {
+    if (tasks && tasks.length > 0) {
       await db.insert(onboardingTasksTable).values(
-        tasks.map((t: { title: string; assignedTo: string; assignedRole: string; dueDate?: string }) => ({
+        tasks.map((t) => ({
           checklistId: checklist.id,
           title: t.title,
           assignedTo: t.assignedTo,
@@ -61,20 +66,39 @@ router.post("/onboarding/checklists", async (req, res) => {
       );
     }
 
+    fireAutomationEvent({ event: "onboarding.started", employeeId }).catch(console.error);
+
     res.status(201).json(await buildChecklist(checklist));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
-router.post("/onboarding/tasks/:id/complete", async (req, res) => {
+router.post("/onboarding/tasks/:id/complete", requireAuth, async (req, res) => {
   try {
     const [task] = await db
       .update(onboardingTasksTable)
       .set({ isCompleted: true, completedAt: new Date() })
       .where(eq(onboardingTasksTable.id, req.params.id))
       .returning();
-    if (!task) return res.status(404).json({ error: "Not found" });
+    if (!task) { res.status(404).json({ error: "Not found" }); return; }
+
+    const [checklist] = await db
+      .select()
+      .from(onboardingChecklistsTable)
+      .where(eq(onboardingChecklistsTable.id, task.checklistId));
+
+    if (checklist) {
+      const allTasks = await db
+        .select()
+        .from(onboardingTasksTable)
+        .where(eq(onboardingTasksTable.checklistId, checklist.id));
+      const allDone = allTasks.every((t) => t.isCompleted);
+      if (allDone) {
+        fireAutomationEvent({ event: "onboarding.completed", employeeId: checklist.employeeId }).catch(console.error);
+      }
+    }
+
     res.json(task);
   } catch (e) {
     res.status(500).json({ error: String(e) });

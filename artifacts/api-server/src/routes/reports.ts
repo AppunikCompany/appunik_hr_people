@@ -8,10 +8,11 @@ import {
   designationsTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { requireAuth } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
 
-router.get("/reports/headcount", async (_req, res) => {
+router.get("/reports/headcount", requireAuth, async (_req, res) => {
   try {
     const employees = await db.select().from(employeesTable);
     const departments = await db.select().from(departmentsTable);
@@ -48,7 +49,7 @@ router.get("/reports/headcount", async (_req, res) => {
   }
 });
 
-router.get("/reports/attendance", async (req, res) => {
+router.get("/reports/attendance", requireAuth, async (req, res) => {
   try {
     const { month, year } = req.query as Record<string, string>;
     const m = parseInt(month);
@@ -92,7 +93,7 @@ router.get("/reports/attendance", async (req, res) => {
   }
 });
 
-router.get("/reports/lop", async (req, res) => {
+router.get("/reports/lop", requireAuth, async (req, res) => {
   try {
     const { month, year } = req.query as Record<string, string>;
     const depts = await db.select().from(departmentsTable);
@@ -114,7 +115,7 @@ router.get("/reports/lop", async (req, res) => {
   }
 });
 
-router.get("/reports/attrition", async (req, res) => {
+router.get("/reports/attrition", requireAuth, async (req, res) => {
   try {
     const { year } = req.query as Record<string, string>;
     const y = parseInt(year);

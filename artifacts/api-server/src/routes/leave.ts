@@ -9,10 +9,12 @@ import {
   employeesTable,
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
+import { requireAuth, requireRole } from "../middlewares/authMiddleware";
+import { fireAutomationEvent } from "../lib/automations";
 
 const router: IRouter = Router();
 
-router.get("/leave/types", async (_req, res) => {
+router.get("/leave/types", requireAuth, async (_req, res) => {
   try {
     const types = await db.select().from(leaveTypesTable);
     res.json(types);
@@ -21,7 +23,7 @@ router.get("/leave/types", async (_req, res) => {
   }
 });
 
-router.post("/leave/types", async (req, res) => {
+router.post("/leave/types", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const [type] = await db.insert(leaveTypesTable).values(req.body).returning();
     res.status(201).json(type);
@@ -30,7 +32,7 @@ router.post("/leave/types", async (req, res) => {
   }
 });
 
-router.get("/leave/balances", async (req, res) => {
+router.get("/leave/balances", requireAuth, async (req, res) => {
   try {
     const { employeeId } = req.query as Record<string, string>;
     const year = new Date().getFullYear();
@@ -64,7 +66,7 @@ router.get("/leave/balances", async (req, res) => {
   }
 });
 
-router.get("/leave/requests", async (req, res) => {
+router.get("/leave/requests", requireAuth, async (req, res) => {
   try {
     const { employeeId, status, managerId } = req.query as Record<string, string>;
 
@@ -98,9 +100,15 @@ router.get("/leave/requests", async (req, res) => {
   }
 });
 
-router.post("/leave/requests", async (req, res) => {
+router.post("/leave/requests", requireAuth, async (req, res) => {
   try {
-    const { employeeId, leaveTypeId, startDate, endDate, reason } = req.body;
+    const { employeeId, leaveTypeId, startDate, endDate, reason } = req.body as {
+      employeeId: string;
+      leaveTypeId: string;
+      startDate: string;
+      endDate: string;
+      reason: string;
+    };
     const start = new Date(startDate);
     const end = new Date(endDate);
     const days = Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1;
@@ -113,6 +121,12 @@ router.post("/leave/requests", async (req, res) => {
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, leaveTypeId));
 
+    fireAutomationEvent({
+      event: "leave.applied",
+      employeeId,
+      variables: { leaveType: lt?.name ?? "", startDate, endDate, days: String(days), reason },
+    }).catch(console.error);
+
     res.status(201).json({
       ...request,
       employeeName: emp ? `${emp.firstName} ${emp.lastName}` : "",
@@ -124,16 +138,16 @@ router.post("/leave/requests", async (req, res) => {
   }
 });
 
-router.post("/leave/requests/:id/approve", async (req, res) => {
+router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
-    const { comment } = req.body;
+    const { comment } = req.body as { comment?: string };
     const [request] = await db
       .update(leaveRequestsTable)
       .set({ status: "approved", managerComment: comment })
       .where(eq(leaveRequestsTable.id, req.params.id))
       .returning();
 
-    if (!request) return res.status(404).json({ error: "Not found" });
+    if (!request) { res.status(404).json({ error: "Not found" }); return; }
 
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, request.employeeId));
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, request.leaveTypeId));
@@ -156,6 +170,12 @@ router.post("/leave/requests/:id/approve", async (req, res) => {
         .where(eq(leaveBalancesTable.id, bal.id));
     }
 
+    fireAutomationEvent({
+      event: "leave.approved",
+      employeeId: request.employeeId,
+      variables: { leaveType: lt?.name ?? "", startDate: request.startDate, endDate: request.endDate, days: String(request.days) },
+    }).catch(console.error);
+
     res.json({
       ...request,
       employeeName: emp ? `${emp.firstName} ${emp.lastName}` : "",
@@ -167,19 +187,25 @@ router.post("/leave/requests/:id/approve", async (req, res) => {
   }
 });
 
-router.post("/leave/requests/:id/reject", async (req, res) => {
+router.post("/leave/requests/:id/reject", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
-    const { comment } = req.body;
+    const { comment } = req.body as { comment?: string };
     const [request] = await db
       .update(leaveRequestsTable)
       .set({ status: "rejected", managerComment: comment })
       .where(eq(leaveRequestsTable.id, req.params.id))
       .returning();
 
-    if (!request) return res.status(404).json({ error: "Not found" });
+    if (!request) { res.status(404).json({ error: "Not found" }); return; }
 
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, request.employeeId));
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, request.leaveTypeId));
+
+    fireAutomationEvent({
+      event: "leave.rejected",
+      employeeId: request.employeeId,
+      variables: { leaveType: lt?.name ?? "", startDate: request.startDate, endDate: request.endDate },
+    }).catch(console.error);
 
     res.json({
       ...request,
@@ -192,7 +218,7 @@ router.post("/leave/requests/:id/reject", async (req, res) => {
   }
 });
 
-router.get("/leave/compoff", async (req, res) => {
+router.get("/leave/compoff", requireAuth, async (req, res) => {
   try {
     const { employeeId } = req.query as Record<string, string>;
     let compoffs = await db.select().from(compoffsTable);
@@ -203,7 +229,7 @@ router.get("/leave/compoff", async (req, res) => {
   }
 });
 
-router.post("/leave/compoff", async (req, res) => {
+router.post("/leave/compoff", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
     const [compoff] = await db.insert(compoffsTable).values(req.body).returning();
     res.status(201).json(compoff);
@@ -212,7 +238,7 @@ router.post("/leave/compoff", async (req, res) => {
   }
 });
 
-router.get("/leave/calendar", async (req, res) => {
+router.get("/leave/calendar", requireAuth, async (req, res) => {
   try {
     const { month, year } = req.query as Record<string, string>;
     const requests = await db

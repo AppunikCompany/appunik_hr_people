@@ -2,6 +2,7 @@ import * as oidc from "openid-client";
 import { Router, type IRouter, type Request, type Response } from "express";
 import { db, usersTable, employeesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import type { AuthUser } from "@workspace/api-zod";
 import {
   clearSession,
   getOidcConfig,
@@ -71,12 +72,13 @@ async function upsertUser(claims: Record<string, unknown>) {
   return user;
 }
 
-router.get("/auth/user", async (req: Request, res: Response) => {
+router.get("/auth/user", async (req: Request, res: Response): Promise<void> => {
   if (!req.isAuthenticated()) {
-    return res.json({ id: null, role: "guest" });
+    res.json({ id: null, role: "guest" });
+    return;
   }
 
-  const user = req.user!;
+  const user = req.user;
 
   const [emp] = await db
     .select()
@@ -90,7 +92,7 @@ router.get("/auth/user", async (req: Request, res: Response) => {
     lastName: user.lastName,
     profileImageUrl: user.profileImageUrl,
     email: user.email,
-    role: (user as any).role ?? "employee",
+    role: user.role ?? "employee",
     employeeId: emp?.id ?? null,
   });
 });
@@ -176,6 +178,7 @@ router.get("/callback", async (req: Request, res: Response) => {
       firstName: dbUser.firstName,
       lastName: dbUser.lastName,
       profileImageUrl: dbUser.profileImageUrl,
+      role: dbUser.role as AuthUser["role"],
     },
     access_token: tokens.access_token,
     refresh_token: tokens.refresh_token,

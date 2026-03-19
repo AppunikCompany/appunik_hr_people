@@ -1,6 +1,6 @@
 import * as oidc from "openid-client";
 import { type Request, type Response, type NextFunction } from "express";
-import type { AuthUser } from "@workspace/api-zod";
+import type { AuthUser, UserRole } from "@workspace/api-zod";
 import {
   clearSession,
   getOidcConfig,
@@ -57,7 +57,7 @@ export async function authMiddleware(
   req: Request,
   res: Response,
   next: NextFunction,
-) {
+): Promise<void> {
   req.isAuthenticated = function (this: Request) {
     return this.user != null;
   } as Request["isAuthenticated"];
@@ -84,4 +84,27 @@ export async function authMiddleware(
 
   req.user = refreshed.user;
   next();
+}
+
+export function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Authentication required" });
+    return;
+  }
+  next();
+}
+
+export function requireRole(...roles: UserRole[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+    const userRole = req.user.role ?? "employee";
+    if (!roles.includes(userRole as UserRole)) {
+      res.status(403).json({ error: "Insufficient permissions" });
+      return;
+    }
+    next();
+  };
 }
