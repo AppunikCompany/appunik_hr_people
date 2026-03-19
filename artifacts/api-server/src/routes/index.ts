@@ -10,6 +10,7 @@ import kraRouter from "./kra";
 import reportsRouter from "./reports";
 import adminRouter from "./admin";
 import automationsRouter from "./automations";
+import selfServiceRouter from "./selfservice";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(kraRouter);
 router.use(reportsRouter);
 router.use(adminRouter);
 router.use(automationsRouter);
+router.use(selfServiceRouter);
 
 export default router;

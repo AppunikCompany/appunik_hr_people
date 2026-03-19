@@ -23,6 +23,7 @@ router.post("/attendance/clock-in", requireAuth, async (req, res) => {
 
     if (existing.length > 0) {
       res.status(400).json({ error: "Already clocked in today" });
+      return;
     }
 
     const clockIn = new Date();
@@ -75,6 +76,7 @@ router.post("/attendance/wfh", requireAuth, async (req, res) => {
 
     if (existing.length > 0) {
       res.status(400).json({ error: "Already marked attendance today" });
+      return;
     }
 
     const [record] = await db

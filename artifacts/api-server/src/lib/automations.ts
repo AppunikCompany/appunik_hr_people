@@ -21,16 +21,24 @@ function interpolate(template: string, vars: Record<string, string>): string {
 export type AutomationEvent =
   | "employee.created"
   | "employee.probation_end"
+  | "employee.birthday"
+  | "employee.work_anniversary"
+  | "employee.offboarding_started"
+  | "attendance.late_arrival"
+  | "attendance.absent_no_leave"
   | "leave.applied"
   | "leave.approved"
   | "leave.rejected"
+  | "leave.balance_low"
   | "asset.assigned"
   | "asset.returned"
   | "onboarding.started"
   | "onboarding.completed"
+  | "onboarding.task_completed"
   | "kra.assigned"
   | "kra.self_assessed"
-  | "kra.completed";
+  | "kra.completed"
+  | "kra.deadline_approaching";
 
 interface FireEventOptions {
   event: AutomationEvent;
@@ -80,13 +88,17 @@ export async function fireAutomationEvent(opts: FireEventOptions): Promise<void>
     const subject = interpolate(template.subject, empVars);
     const body = interpolate(template.bodyHtml, empVars);
 
-    let recipientEmails: string[] = [];
-    const recipients = Array.isArray(rule.recipients) ? rule.recipients : [];
+    const recipientList = typeof rule.recipients === "string"
+      ? rule.recipients.split(",").map((r) => r.trim())
+      : [];
 
-    for (const recipient of recipients) {
+    const recipientEmails: string[] = [];
+    for (const recipient of recipientList) {
       if (recipient === "employee") {
         recipientEmails.push(employee.email);
-      } else if (recipient === "hr_admin" || recipient === "manager") {
+      } else if (recipient === "hr_admin") {
+        if (process.env.HR_ADMIN_EMAIL) recipientEmails.push(process.env.HR_ADMIN_EMAIL);
+      } else if (recipient === "manager") {
         if (employee.reportingManagerId) {
           const [mgr] = await db
             .select()
@@ -94,19 +106,21 @@ export async function fireAutomationEvent(opts: FireEventOptions): Promise<void>
             .where(eq(employeesTable.id, employee.reportingManagerId));
           if (mgr) recipientEmails.push(mgr.email);
         }
+      } else if (recipient.includes("@")) {
+        recipientEmails.push(recipient);
       }
     }
 
-    recipientEmails = [...new Set(recipientEmails)];
+    const uniqueEmails = [...new Set(recipientEmails)];
 
     let status: "sent" | "failed" = "sent";
     let errorMsg: string | null = null;
 
-    if (resend && recipientEmails.length > 0) {
+    if (resend && uniqueEmails.length > 0) {
       try {
         await resend.emails.send({
           from: FROM_EMAIL,
-          to: recipientEmails,
+          to: uniqueEmails,
           subject,
           html: `<div style="font-family:Inter,sans-serif;max-width:600px;margin:auto">${body.replace(/\n/g, "<br>")}</div>`,
         });
@@ -120,7 +134,7 @@ export async function fireAutomationEvent(opts: FireEventOptions): Promise<void>
       ruleId: rule.id,
       employeeId,
       templateCode: template.code,
-      recipientEmail: recipientEmails.join(", "),
+      recipientEmail: uniqueEmails.join(", ") || "none",
       status,
       errorMessage: errorMsg,
     });
@@ -143,7 +157,7 @@ export async function runScheduledAutomations(ctx: ScheduledJobContext): Promise
       const dob = new Date(emp.dateOfBirth);
       if (dob.getMonth() + 1 === mm && dob.getDate() === dd) {
         await fireAutomationEvent({
-          event: "employee.created",
+          event: "employee.birthday",
           employeeId: emp.id,
           variables: { eventType: "birthday" },
         });
@@ -155,9 +169,21 @@ export async function runScheduledAutomations(ctx: ScheduledJobContext): Promise
       if (joined.getMonth() + 1 === mm && joined.getDate() === dd && joined.getFullYear() < today.getFullYear()) {
         const years = today.getFullYear() - joined.getFullYear();
         await fireAutomationEvent({
-          event: "employee.created",
+          event: "employee.work_anniversary",
           employeeId: emp.id,
           variables: { eventType: "work_anniversary", years: String(years) },
+        });
+      }
+    }
+
+    if (emp.probationEndDate) {
+      const probEnd = new Date(emp.probationEndDate);
+      const daysToEnd = Math.ceil((probEnd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysToEnd === 7) {
+        await fireAutomationEvent({
+          event: "employee.probation_end",
+          employeeId: emp.id,
+          variables: { daysRemaining: "7" },
         });
       }
     }

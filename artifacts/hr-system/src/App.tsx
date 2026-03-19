@@ -13,6 +13,7 @@ import Performance from "@/pages/Performance";
 import Reports from "@/pages/Reports";
 import Automations from "@/pages/Automations";
 import Settings from "@/pages/Settings";
+import SelfService from "@/pages/SelfService";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -65,6 +66,7 @@ function Router() {
         <Route path="/settings/designations" component={Settings} />
         <Route path="/settings/leave-policies" component={Settings} />
         <Route path="/settings/notifications" component={Settings} />
+        <Route path="/self-service" component={SelfService} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
