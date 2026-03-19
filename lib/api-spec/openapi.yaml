@@ -1,22 +1,41 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 1.0.0
+  description: HR Management System API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: employees
+    description: Employee management
+  - name: attendance
+    description: Attendance & WFH tracking
+  - name: leave
+    description: Leave management
+  - name: onboarding
+    description: Onboarding checklists
+  - name: assets
+    description: Asset management
+  - name: kra
+    description: KRA & Performance management
+  - name: reports
+    description: Reports & analytics
+  - name: admin
+    description: Admin & configuration
+  - name: automations
+    description: Automations & email notifications
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +43,1523 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/user:
+    get:
+      operationId: getCurrentAuthUser
+      tags: [auth]
+      summary: Get current auth user
+      responses:
+        "200":
+          description: Current auth user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GetCurrentAuthUserResponse"
+
+  # ── EMPLOYEES ────────────────────────────────────────────────────
+  /employees:
+    get:
+      operationId: listEmployees
+      tags: [employees]
+      summary: List all employees
+      parameters:
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: department
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: designation
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of employees
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Employee"
+    post:
+      operationId: createEmployee
+      tags: [employees]
+      summary: Create new employee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmployeeBody"
+      responses:
+        "201":
+          description: Created employee
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+
+  /employees/{id}:
+    get:
+      operationId: getEmployee
+      tags: [employees]
+      summary: Get employee by ID
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Employee
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateEmployee
+      tags: [employees]
+      summary: Update employee
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEmployeeBody"
+      responses:
+        "200":
+          description: Updated employee
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+    delete:
+      operationId: deleteEmployee
+      tags: [employees]
+      summary: Delete employee
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /employees/{id}/documents:
+    get:
+      operationId: listEmployeeDocuments
+      tags: [employees]
+      summary: List employee documents
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeeDocument"
+    post:
+      operationId: uploadEmployeeDocument
+      tags: [employees]
+      summary: Upload employee document
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadDocumentBody"
+      responses:
+        "201":
+          description: Created document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeDocument"
+
+  /employees/{id}/history:
+    get:
+      operationId: getEmployeeHistory
+      tags: [employees]
+      summary: Get promotion/transfer history
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: History
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmployeeHistory"
+    post:
+      operationId: addEmployeeHistory
+      tags: [employees]
+      summary: Add history entry
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddEmployeeHistoryBody"
+      responses:
+        "201":
+          description: History entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeHistory"
+
+  /org-chart:
+    get:
+      operationId: getOrgChart
+      tags: [employees]
+      summary: Get org chart hierarchy
+      responses:
+        "200":
+          description: Org chart
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OrgChartNode"
+
+  # ── ATTENDANCE ────────────────────────────────────────────────────
+  /attendance/clock-in:
+    post:
+      operationId: clockIn
+      tags: [attendance]
+      summary: Clock in
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClockInBody"
+      responses:
+        "201":
+          description: Attendance record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceRecord"
+
+  /attendance/clock-out:
+    post:
+      operationId: clockOut
+      tags: [attendance]
+      summary: Clock out
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClockOutBody"
+      responses:
+        "200":
+          description: Updated attendance record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceRecord"
+
+  /attendance/wfh:
+    post:
+      operationId: markWfh
+      tags: [attendance]
+      summary: Mark WFH for the day
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarkWfhBody"
+      responses:
+        "201":
+          description: WFH record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceRecord"
+
+  /attendance/today:
+    get:
+      operationId: getTodayAttendance
+      tags: [attendance]
+      summary: Get today's attendance for current user
+      responses:
+        "200":
+          description: Today's attendance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttendanceRecord"
+
+  /attendance/monthly:
+    get:
+      operationId: getMonthlyAttendance
+      tags: [attendance]
+      summary: Get monthly attendance summary
+      parameters:
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: employeeId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Monthly attendance
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AttendanceRecord"
+
+  /attendance/team:
+    get:
+      operationId: getTeamAttendance
+      tags: [attendance]
+      summary: Get team attendance for today
+      responses:
+        "200":
+          description: Team attendance
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamAttendanceEntry"
+
+  /attendance/overtime:
+    post:
+      operationId: logOvertime
+      tags: [attendance]
+      summary: Log overtime hours
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OvertimeLogBody"
+      responses:
+        "201":
+          description: Overtime log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OvertimeLog"
+
+  /holidays:
+    get:
+      operationId: listHolidays
+      tags: [attendance]
+      summary: List holidays for a year
+      parameters:
+        - in: query
+          name: year
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Holidays
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Holiday"
+    post:
+      operationId: createHoliday
+      tags: [attendance]
+      summary: Create holiday
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateHolidayBody"
+      responses:
+        "201":
+          description: Holiday
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Holiday"
+
+  /holidays/{id}:
+    delete:
+      operationId: deleteHoliday
+      tags: [attendance]
+      summary: Delete holiday
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  # ── LEAVE ────────────────────────────────────────────────────
+  /leave/types:
+    get:
+      operationId: listLeaveTypes
+      tags: [leave]
+      summary: List leave types
+      responses:
+        "200":
+          description: Leave types
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaveType"
+    post:
+      operationId: createLeaveType
+      tags: [leave]
+      summary: Create leave type
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLeaveTypeBody"
+      responses:
+        "201":
+          description: Leave type
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveType"
+
+  /leave/balances:
+    get:
+      operationId: getLeaveBalances
+      tags: [leave]
+      summary: Get leave balances for an employee
+      parameters:
+        - in: query
+          name: employeeId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Leave balances
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaveBalance"
+
+  /leave/requests:
+    get:
+      operationId: listLeaveRequests
+      tags: [leave]
+      summary: List leave requests
+      parameters:
+        - in: query
+          name: employeeId
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: managerId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Leave requests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaveRequest"
+    post:
+      operationId: applyLeave
+      tags: [leave]
+      summary: Apply for leave
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplyLeaveBody"
+      responses:
+        "201":
+          description: Leave request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveRequest"
+
+  /leave/requests/{id}/approve:
+    post:
+      operationId: approveLeave
+      tags: [leave]
+      summary: Approve leave request
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeaveActionBody"
+      responses:
+        "200":
+          description: Updated leave request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveRequest"
+
+  /leave/requests/{id}/reject:
+    post:
+      operationId: rejectLeave
+      tags: [leave]
+      summary: Reject leave request
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LeaveActionBody"
+      responses:
+        "200":
+          description: Updated leave request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeaveRequest"
+
+  /leave/compoff:
+    get:
+      operationId: listCompoffs
+      tags: [leave]
+      summary: List comp-off records
+      parameters:
+        - in: query
+          name: employeeId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Comp-offs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Compoff"
+    post:
+      operationId: createCompoff
+      tags: [leave]
+      summary: Create comp-off credit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCompoffBody"
+      responses:
+        "201":
+          description: Comp-off
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Compoff"
+
+  /leave/calendar:
+    get:
+      operationId: getLeaveCalendar
+      tags: [leave]
+      summary: Get team leave calendar
+      parameters:
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Leave calendar entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeaveCalendarEntry"
+
+  # ── ONBOARDING ────────────────────────────────────────────────────
+  /onboarding/checklists:
+    get:
+      operationId: listOnboardingChecklists
+      tags: [onboarding]
+      summary: List onboarding checklists
+      parameters:
+        - in: query
+          name: employeeId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Checklists
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/OnboardingChecklist"
+    post:
+      operationId: createOnboardingChecklist
+      tags: [onboarding]
+      summary: Create onboarding checklist for employee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateOnboardingChecklistBody"
+      responses:
+        "201":
+          description: Checklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnboardingChecklist"
+
+  /onboarding/tasks/{id}/complete:
+    post:
+      operationId: completeOnboardingTask
+      tags: [onboarding]
+      summary: Mark onboarding task as complete
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OnboardingTask"
+
+  # ── ASSETS ────────────────────────────────────────────────────
+  /assets:
+    get:
+      operationId: listAssets
+      tags: [assets]
+      summary: List assets
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: category
+          schema:
+            type: string
+        - in: query
+          name: assignedTo
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Asset"
+    post:
+      operationId: createAsset
+      tags: [assets]
+      summary: Create asset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssetBody"
+      responses:
+        "201":
+          description: Asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+
+  /assets/{id}:
+    get:
+      operationId: getAsset
+      tags: [assets]
+      summary: Get asset
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+    patch:
+      operationId: updateAsset
+      tags: [assets]
+      summary: Update asset
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAssetBody"
+      responses:
+        "200":
+          description: Asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+
+  /assets/{id}/assign:
+    post:
+      operationId: assignAsset
+      tags: [assets]
+      summary: Assign asset to employee
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignAssetBody"
+      responses:
+        "200":
+          description: Asset assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetAssignment"
+
+  /assets/{id}/return:
+    post:
+      operationId: returnAsset
+      tags: [assets]
+      summary: Return asset from employee
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReturnAssetBody"
+      responses:
+        "200":
+          description: Asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Asset"
+
+  /assets/categories:
+    get:
+      operationId: listAssetCategories
+      tags: [assets]
+      summary: List asset categories
+      responses:
+        "200":
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssetCategory"
+    post:
+      operationId: createAssetCategory
+      tags: [assets]
+      summary: Create asset category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssetCategoryBody"
+      responses:
+        "201":
+          description: Category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssetCategory"
+
+  # ── KRA / PERFORMANCE ────────────────────────────────────────────────────
+  /kra/templates:
+    get:
+      operationId: listKraTemplates
+      tags: [kra]
+      summary: List KRA templates
+      responses:
+        "200":
+          description: KRA templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KraTemplate"
+    post:
+      operationId: createKraTemplate
+      tags: [kra]
+      summary: Create KRA template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKraTemplateBody"
+      responses:
+        "201":
+          description: KRA template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KraTemplate"
+
+  /kra/review-cycles:
+    get:
+      operationId: listReviewCycles
+      tags: [kra]
+      summary: List review cycles
+      responses:
+        "200":
+          description: Review cycles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReviewCycle"
+    post:
+      operationId: createReviewCycle
+      tags: [kra]
+      summary: Create review cycle
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReviewCycleBody"
+      responses:
+        "201":
+          description: Review cycle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewCycle"
+
+  /kra/review-cycles/{id}/close:
+    post:
+      operationId: closeReviewCycle
+      tags: [kra]
+      summary: Close a review cycle
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Closed cycle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReviewCycle"
+
+  /kra/assignments:
+    get:
+      operationId: listKraAssignments
+      tags: [kra]
+      summary: List KRA assignments
+      parameters:
+        - in: query
+          name: employeeId
+          schema:
+            type: string
+        - in: query
+          name: cycleId
+          schema:
+            type: string
+      responses:
+        "200":
+          description: KRA assignments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KraAssignment"
+    post:
+      operationId: createKraAssignment
+      tags: [kra]
+      summary: Assign KRA to employee
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKraAssignmentBody"
+      responses:
+        "201":
+          description: KRA assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KraAssignment"
+
+  /kra/assignments/{id}/self-assess:
+    post:
+      operationId: submitSelfAssessment
+      tags: [kra]
+      summary: Submit self assessment
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SelfAssessmentBody"
+      responses:
+        "200":
+          description: Updated assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KraAssignment"
+
+  /kra/assignments/{id}/manager-rate:
+    post:
+      operationId: submitManagerRating
+      tags: [kra]
+      summary: Submit manager rating
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ManagerRatingBody"
+      responses:
+        "200":
+          description: Updated assignment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KraAssignment"
+
+  # ── REPORTS ────────────────────────────────────────────────────
+  /reports/headcount:
+    get:
+      operationId: getHeadcountReport
+      tags: [reports]
+      summary: Get headcount report
+      responses:
+        "200":
+          description: Headcount report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HeadcountReport"
+
+  /reports/attendance:
+    get:
+      operationId: getAttendanceReport
+      tags: [reports]
+      summary: Get monthly attendance report
+      parameters:
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Attendance report
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AttendanceReportEntry"
+
+  /reports/lop:
+    get:
+      operationId: getLopReport
+      tags: [reports]
+      summary: Get LOP report
+      parameters:
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: integer
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: LOP report
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LopReportEntry"
+
+  /reports/attrition:
+    get:
+      operationId: getAttritionReport
+      tags: [reports]
+      summary: Get attrition report
+      parameters:
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Attrition report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AttritionReport"
+
+  # ── ADMIN ────────────────────────────────────────────────────
+  /admin/departments:
+    get:
+      operationId: listDepartments
+      tags: [admin]
+      summary: List departments
+      responses:
+        "200":
+          description: Departments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Department"
+    post:
+      operationId: createDepartment
+      tags: [admin]
+      summary: Create department
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDepartmentBody"
+      responses:
+        "201":
+          description: Department
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+
+  /admin/departments/{id}:
+    patch:
+      operationId: updateDepartment
+      tags: [admin]
+      summary: Update department
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDepartmentBody"
+      responses:
+        "200":
+          description: Department
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Department"
+    delete:
+      operationId: deleteDepartment
+      tags: [admin]
+      summary: Delete department
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /admin/designations:
+    get:
+      operationId: listDesignations
+      tags: [admin]
+      summary: List designations
+      responses:
+        "200":
+          description: Designations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Designation"
+    post:
+      operationId: createDesignation
+      tags: [admin]
+      summary: Create designation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDesignationBody"
+      responses:
+        "201":
+          description: Designation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Designation"
+
+  /admin/designations/{id}:
+    patch:
+      operationId: updateDesignation
+      tags: [admin]
+      summary: Update designation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDesignationBody"
+      responses:
+        "200":
+          description: Designation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Designation"
+    delete:
+      operationId: deleteDesignation
+      tags: [admin]
+      summary: Delete designation
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+  /admin/company-profile:
+    get:
+      operationId: getCompanyProfile
+      tags: [admin]
+      summary: Get company profile
+      responses:
+        "200":
+          description: Company profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyProfile"
+    patch:
+      operationId: updateCompanyProfile
+      tags: [admin]
+      summary: Update company profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCompanyProfileBody"
+      responses:
+        "200":
+          description: Company profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyProfile"
+
+  /admin/leave-policies:
+    get:
+      operationId: listLeavePolicies
+      tags: [admin]
+      summary: List leave policies
+      responses:
+        "200":
+          description: Leave policies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/LeavePolicy"
+    post:
+      operationId: createLeavePolicy
+      tags: [admin]
+      summary: Create leave policy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLeavePolicyBody"
+      responses:
+        "201":
+          description: Leave policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeavePolicy"
+
+  /admin/leave-policies/{id}:
+    patch:
+      operationId: updateLeavePolicy
+      tags: [admin]
+      summary: Update leave policy
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLeavePolicyBody"
+      responses:
+        "200":
+          description: Leave policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LeavePolicy"
+
+  /admin/notification-settings:
+    get:
+      operationId: getNotificationSettings
+      tags: [admin]
+      summary: Get notification settings
+      responses:
+        "200":
+          description: Notification settings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationSetting"
+    patch:
+      operationId: updateNotificationSetting
+      tags: [admin]
+      summary: Update notification setting
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNotificationSettingBody"
+      responses:
+        "200":
+          description: Notification setting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationSetting"
+
+  /admin/financial-year:
+    get:
+      operationId: getFinancialYear
+      tags: [admin]
+      summary: Get financial year config
+      responses:
+        "200":
+          description: Financial year
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinancialYearConfig"
+    patch:
+      operationId: updateFinancialYear
+      tags: [admin]
+      summary: Update financial year config
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFinancialYearBody"
+      responses:
+        "200":
+          description: Financial year
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinancialYearConfig"
+
+  # ── AUTOMATIONS ────────────────────────────────────────────────────
+  /automations/rules:
+    get:
+      operationId: listAutomationRules
+      tags: [automations]
+      summary: List automation rules
+      responses:
+        "200":
+          description: Rules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AutomationRule"
+
+  /automations/rules/{id}/toggle:
+    post:
+      operationId: toggleAutomationRule
+      tags: [automations]
+      summary: Toggle automation rule on/off
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ToggleAutomationBody"
+      responses:
+        "200":
+          description: Updated rule
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutomationRule"
+
+  /automations/logs:
+    get:
+      operationId: listAutomationLogs
+      tags: [automations]
+      summary: List automation logs
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AutomationLog"
+
+  /automations/email-templates:
+    get:
+      operationId: listEmailTemplates
+      tags: [automations]
+      summary: List email templates
+      responses:
+        "200":
+          description: Templates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EmailTemplate"
+    post:
+      operationId: createEmailTemplate
+      tags: [automations]
+      summary: Create email template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmailTemplateBody"
+      responses:
+        "201":
+          description: Template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailTemplate"
+
+  /automations/email-templates/{id}:
+    patch:
+      operationId: updateEmailTemplate
+      tags: [automations]
+      summary: Update email template
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEmailTemplateBody"
+      responses:
+        "200":
+          description: Template
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmailTemplate"
+
 components:
   schemas:
     HealthStatus:
@@ -31,6 +1567,1304 @@ components:
       properties:
         status:
           type: string
-      required:
-        - status
+      required: [status]
 
+    GetCurrentAuthUserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        username:
+          type: ["string", "null"]
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        profileImageUrl:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        role:
+          type: string
+        employeeId:
+          type: ["string", "null"]
+      required: [id, role]
+
+    # ── EMPLOYEE schemas ──────────────────────────────────────────
+    Employee:
+      type: object
+      properties:
+        id:
+          type: string
+        employeeCode:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        gender:
+          type: ["string", "null"]
+        dateOfBirth:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        emergencyContact:
+          type: ["string", "null"]
+        emergencyPhone:
+          type: ["string", "null"]
+        departmentId:
+          type: ["string", "null"]
+        departmentName:
+          type: ["string", "null"]
+        designationId:
+          type: ["string", "null"]
+        designationName:
+          type: ["string", "null"]
+        reportingManagerId:
+          type: ["string", "null"]
+        reportingManagerName:
+          type: ["string", "null"]
+        employmentType:
+          type: string
+        joiningDate:
+          type: string
+        probationEndDate:
+          type: ["string", "null"]
+        status:
+          type: string
+        lastWorkingDay:
+          type: ["string", "null"]
+        resignationDate:
+          type: ["string", "null"]
+        fnfStatus:
+          type: ["string", "null"]
+        userId:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, employeeCode, firstName, lastName, email, employmentType, joiningDate, status, createdAt, updatedAt]
+
+    CreateEmployeeBody:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        gender:
+          type: ["string", "null"]
+        dateOfBirth:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        emergencyContact:
+          type: ["string", "null"]
+        emergencyPhone:
+          type: ["string", "null"]
+        departmentId:
+          type: ["string", "null"]
+        designationId:
+          type: ["string", "null"]
+        reportingManagerId:
+          type: ["string", "null"]
+        employmentType:
+          type: string
+        joiningDate:
+          type: string
+        probationEndDate:
+          type: ["string", "null"]
+        status:
+          type: string
+      required: [firstName, lastName, email, employmentType, joiningDate, status]
+
+    UpdateEmployeeBody:
+      type: object
+      properties:
+        firstName:
+          type: ["string", "null"]
+        lastName:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        gender:
+          type: ["string", "null"]
+        dateOfBirth:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        emergencyContact:
+          type: ["string", "null"]
+        emergencyPhone:
+          type: ["string", "null"]
+        departmentId:
+          type: ["string", "null"]
+        designationId:
+          type: ["string", "null"]
+        reportingManagerId:
+          type: ["string", "null"]
+        employmentType:
+          type: ["string", "null"]
+        joiningDate:
+          type: ["string", "null"]
+        probationEndDate:
+          type: ["string", "null"]
+        status:
+          type: ["string", "null"]
+        lastWorkingDay:
+          type: ["string", "null"]
+        resignationDate:
+          type: ["string", "null"]
+        fnfStatus:
+          type: ["string", "null"]
+
+    EmployeeDocument:
+      type: object
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        documentType:
+          type: string
+        fileName:
+          type: string
+        fileUrl:
+          type: string
+        fileSize:
+          type: ["integer", "null"]
+        uploadedAt:
+          type: string
+        verifiedAt:
+          type: ["string", "null"]
+        verifiedBy:
+          type: ["string", "null"]
+      required: [id, employeeId, documentType, fileName, fileUrl, uploadedAt]
+
+    UploadDocumentBody:
+      type: object
+      properties:
+        documentType:
+          type: string
+        fileName:
+          type: string
+        fileUrl:
+          type: string
+        fileSize:
+          type: ["integer", "null"]
+      required: [documentType, fileName, fileUrl]
+
+    EmployeeHistory:
+      type: object
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        changeType:
+          type: string
+        previousValue:
+          type: ["string", "null"]
+        newValue:
+          type: ["string", "null"]
+        effectiveDate:
+          type: string
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        createdBy:
+          type: ["string", "null"]
+      required: [id, employeeId, changeType, effectiveDate, createdAt]
+
+    AddEmployeeHistoryBody:
+      type: object
+      properties:
+        changeType:
+          type: string
+        previousValue:
+          type: ["string", "null"]
+        newValue:
+          type: ["string", "null"]
+        effectiveDate:
+          type: string
+        notes:
+          type: ["string", "null"]
+      required: [changeType, effectiveDate]
+
+    OrgChartNode:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        designation:
+          type: ["string", "null"]
+        department:
+          type: ["string", "null"]
+        reportingManagerId:
+          type: ["string", "null"]
+        profileImageUrl:
+          type: ["string", "null"]
+      required: [id, name]
+
+    # ── ATTENDANCE schemas ──────────────────────────────────────────
+    AttendanceRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        date:
+          type: string
+        clockIn:
+          type: ["string", "null"]
+        clockOut:
+          type: ["string", "null"]
+        type:
+          type: string
+        hoursWorked:
+          type: ["number", "null"]
+        isLate:
+          type: boolean
+        isHalfDay:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+      required: [id, employeeId, date, type, isLate, isHalfDay]
+
+    ClockInBody:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        notes:
+          type: ["string", "null"]
+      required: [employeeId]
+
+    ClockOutBody:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        notes:
+          type: ["string", "null"]
+      required: [employeeId]
+
+    MarkWfhBody:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        notes:
+          type: ["string", "null"]
+      required: [employeeId]
+
+    TeamAttendanceEntry:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        employeeName:
+          type: string
+        department:
+          type: ["string", "null"]
+        status:
+          type: string
+        clockIn:
+          type: ["string", "null"]
+        type:
+          type: ["string", "null"]
+      required: [employeeId, employeeName, status]
+
+    OvertimeLog:
+      type: object
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        date:
+          type: string
+        hours:
+          type: number
+        reason:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, employeeId, date, hours, createdAt]
+
+    OvertimeLogBody:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        date:
+          type: string
+        hours:
+          type: number
+        reason:
+          type: ["string", "null"]
+      required: [employeeId, date, hours]
+
+    Holiday:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        date:
+          type: string
+        type:
+          type: string
+        year:
+          type: integer
+      required: [id, name, date, type, year]
+
+    CreateHolidayBody:
+      type: object
+      properties:
+        name:
+          type: string
+        date:
+          type: string
+        type:
+          type: string
+        year:
+          type: integer
+      required: [name, date, type, year]
+
+    # ── LEAVE schemas ──────────────────────────────────────────
+    LeaveType:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        maxDaysPerYear:
+          type: integer
+        accrualPerMonth:
+          type: ["number", "null"]
+        isCarryForward:
+          type: boolean
+        maxCarryForward:
+          type: ["integer", "null"]
+        isPaidLeave:
+          type: boolean
+        isActive:
+          type: boolean
+      required: [id, name, code, maxDaysPerYear, isCarryForward, isPaidLeave, isActive]
+
+    CreateLeaveTypeBody:
+      type: object
+      properties:
+        name:
+          type: string
+        code:
+          type: string
+        maxDaysPerYear:
+          type: integer
+        accrualPerMonth:
+          type: ["number", "null"]
+        isCarryForward:
+          type: boolean
+        maxCarryForward:
+          type: ["integer", "null"]
+        isPaidLeave:
+          type: boolean
+      required: [name, code, maxDaysPerYear, isCarryForward, isPaidLeave]
+
+    LeaveBalance:
+      type: object
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        leaveTypeId:
+          type: string
+        leaveTypeName:
+          type: string
+        leaveTypeCode:
+          type: string
+        balance:
+          type: number
+        used:
+          type: number
+        year:
+          type: integer
+      required: [id, employeeId, leaveTypeId, leaveTypeName, leaveTypeCode, balance, used, year]
+
+    LeaveRequest:
+      type: object
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        employeeName:
+          type: string
+        leaveTypeId:
+          type: string
+        leaveTypeName:
+          type: string
+        startDate:
+          type: string
+        endDate:
+          type: string
+        days:
+          type: number
+        reason:
+          type: ["string", "null"]
+        status:
+          type: string
+        managerComment:
+          type: ["string", "null"]
+        approvedById:
+          type: ["string", "null"]
+        approvedByName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, employeeId, employeeName, leaveTypeId, leaveTypeName, startDate, endDate, days, status, createdAt, updatedAt]
+
+    ApplyLeaveBody:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        leaveTypeId:
+          type: string
+        startDate:
+          type: string
+        endDate:
+          type: string
+        reason:
+          type: ["string", "null"]
+      required: [employeeId, leaveTypeId, startDate, endDate]
+
+    LeaveActionBody:
+      type: object
+      properties:
+        comment:
+          type: ["string", "null"]
+
+    Compoff:
+      type: object
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        workDate:
+          type: string
+        creditDays:
+          type: number
+        reason:
+          type: ["string", "null"]
+        status:
+          type: string
+        expiryDate:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, employeeId, workDate, creditDays, status, createdAt]
+
+    CreateCompoffBody:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        workDate:
+          type: string
+        creditDays:
+          type: number
+        reason:
+          type: ["string", "null"]
+        expiryDate:
+          type: ["string", "null"]
+      required: [employeeId, workDate, creditDays]
+
+    LeaveCalendarEntry:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        employeeName:
+          type: string
+        leaveType:
+          type: string
+        startDate:
+          type: string
+        endDate:
+          type: string
+        days:
+          type: number
+        status:
+          type: string
+      required: [employeeId, employeeName, leaveType, startDate, endDate, days, status]
+
+    # ── ONBOARDING schemas ──────────────────────────────────────────
+    OnboardingChecklist:
+      type: object
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        employeeName:
+          type: string
+        tasks:
+          type: array
+          items:
+            $ref: "#/components/schemas/OnboardingTask"
+        completedCount:
+          type: integer
+        totalCount:
+          type: integer
+        createdAt:
+          type: string
+      required: [id, employeeId, employeeName, tasks, completedCount, totalCount, createdAt]
+
+    OnboardingTask:
+      type: object
+      properties:
+        id:
+          type: string
+        checklistId:
+          type: string
+        title:
+          type: string
+        assignedTo:
+          type: string
+        assignedRole:
+          type: string
+        isCompleted:
+          type: boolean
+        completedAt:
+          type: ["string", "null"]
+        dueDate:
+          type: ["string", "null"]
+      required: [id, checklistId, title, assignedTo, assignedRole, isCompleted]
+
+    CreateOnboardingChecklistBody:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        tasks:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              assignedTo:
+                type: string
+              assignedRole:
+                type: string
+              dueDate:
+                type: ["string", "null"]
+            required: [title, assignedTo, assignedRole]
+      required: [employeeId, tasks]
+
+    # ── ASSET schemas ──────────────────────────────────────────
+    Asset:
+      type: object
+      properties:
+        id:
+          type: string
+        assetCode:
+          type: string
+        name:
+          type: string
+        categoryId:
+          type: string
+        categoryName:
+          type: string
+        serialNumber:
+          type: ["string", "null"]
+        purchaseDate:
+          type: ["string", "null"]
+        purchaseCost:
+          type: ["number", "null"]
+        status:
+          type: string
+        condition:
+          type: ["string", "null"]
+        assignedToId:
+          type: ["string", "null"]
+        assignedToName:
+          type: ["string", "null"]
+        assignedAt:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, assetCode, name, categoryId, categoryName, status, createdAt]
+
+    CreateAssetBody:
+      type: object
+      properties:
+        name:
+          type: string
+        categoryId:
+          type: string
+        serialNumber:
+          type: ["string", "null"]
+        purchaseDate:
+          type: ["string", "null"]
+        purchaseCost:
+          type: ["number", "null"]
+        condition:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+      required: [name, categoryId]
+
+    UpdateAssetBody:
+      type: object
+      properties:
+        name:
+          type: ["string", "null"]
+        categoryId:
+          type: ["string", "null"]
+        serialNumber:
+          type: ["string", "null"]
+        purchaseDate:
+          type: ["string", "null"]
+        purchaseCost:
+          type: ["number", "null"]
+        status:
+          type: ["string", "null"]
+        condition:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+
+    AssetAssignment:
+      type: object
+      properties:
+        id:
+          type: string
+        assetId:
+          type: string
+        employeeId:
+          type: string
+        assignedAt:
+          type: string
+        acknowledgedAt:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+      required: [id, assetId, employeeId, assignedAt]
+
+    AssignAssetBody:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        notes:
+          type: ["string", "null"]
+      required: [employeeId]
+
+    ReturnAssetBody:
+      type: object
+      properties:
+        condition:
+          type: ["string", "null"]
+        notes:
+          type: ["string", "null"]
+
+    AssetCategory:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        depreciationRate:
+          type: ["number", "null"]
+        createdAt:
+          type: string
+      required: [id, name, createdAt]
+
+    CreateAssetCategoryBody:
+      type: object
+      properties:
+        name:
+          type: string
+        depreciationRate:
+          type: ["number", "null"]
+      required: [name]
+
+    # ── KRA schemas ──────────────────────────────────────────
+    KraTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        designation:
+          type: ["string", "null"]
+        department:
+          type: ["string", "null"]
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              weightage:
+                type: number
+            required: [title, weightage]
+        createdAt:
+          type: string
+      required: [id, name, items, createdAt]
+
+    CreateKraTemplateBody:
+      type: object
+      properties:
+        name:
+          type: string
+        designation:
+          type: ["string", "null"]
+        department:
+          type: ["string", "null"]
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              weightage:
+                type: number
+            required: [title, weightage]
+      required: [name, items]
+
+    ReviewCycle:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        cycleType:
+          type: string
+        startDate:
+          type: string
+        endDate:
+          type: string
+        closeDate:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+      required: [id, name, cycleType, startDate, endDate, closeDate, status, createdAt]
+
+    CreateReviewCycleBody:
+      type: object
+      properties:
+        name:
+          type: string
+        cycleType:
+          type: string
+        startDate:
+          type: string
+        endDate:
+          type: string
+        closeDate:
+          type: string
+      required: [name, cycleType, startDate, endDate, closeDate]
+
+    KraAssignment:
+      type: object
+      properties:
+        id:
+          type: string
+        employeeId:
+          type: string
+        employeeName:
+          type: string
+        cycleId:
+          type: string
+        cycleName:
+          type: string
+        kraTitle:
+          type: string
+        weightage:
+          type: number
+        target:
+          type: ["string", "null"]
+        selfRating:
+          type: ["number", "null"]
+        selfComment:
+          type: ["string", "null"]
+        managerRating:
+          type: ["number", "null"]
+        managerComment:
+          type: ["string", "null"]
+        weightedScore:
+          type: ["number", "null"]
+        status:
+          type: string
+        createdAt:
+          type: string
+      required: [id, employeeId, employeeName, cycleId, cycleName, kraTitle, weightage, status, createdAt]
+
+    CreateKraAssignmentBody:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        cycleId:
+          type: string
+        kraTitle:
+          type: string
+        weightage:
+          type: number
+        target:
+          type: ["string", "null"]
+      required: [employeeId, cycleId, kraTitle, weightage]
+
+    SelfAssessmentBody:
+      type: object
+      properties:
+        selfRating:
+          type: number
+        selfComment:
+          type: ["string", "null"]
+      required: [selfRating]
+
+    ManagerRatingBody:
+      type: object
+      properties:
+        managerRating:
+          type: number
+        managerComment:
+          type: ["string", "null"]
+      required: [managerRating]
+
+    # ── REPORT schemas ──────────────────────────────────────────
+    HeadcountReport:
+      type: object
+      properties:
+        total:
+          type: integer
+        byDepartment:
+          type: array
+          items:
+            type: object
+            properties:
+              department:
+                type: string
+              count:
+                type: integer
+            required: [department, count]
+        byDesignation:
+          type: array
+          items:
+            type: object
+            properties:
+              designation:
+                type: string
+              count:
+                type: integer
+            required: [designation, count]
+        byEmploymentType:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              count:
+                type: integer
+            required: [type, count]
+        byStatus:
+          type: array
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+              count:
+                type: integer
+            required: [status, count]
+      required: [total, byDepartment, byDesignation, byEmploymentType, byStatus]
+
+    AttendanceReportEntry:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        employeeName:
+          type: string
+        department:
+          type: ["string", "null"]
+        presentDays:
+          type: integer
+        wfhDays:
+          type: integer
+        absentDays:
+          type: integer
+        halfDays:
+          type: integer
+        lopDays:
+          type: integer
+        leaveDays:
+          type: integer
+        overtimeHours:
+          type: number
+      required: [employeeId, employeeName, presentDays, wfhDays, absentDays, halfDays, lopDays, leaveDays, overtimeHours]
+
+    LopReportEntry:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        employeeName:
+          type: string
+        department:
+          type: ["string", "null"]
+        lopDays:
+          type: number
+        month:
+          type: integer
+        year:
+          type: integer
+      required: [employeeId, employeeName, lopDays, month, year]
+
+    AttritionReport:
+      type: object
+      properties:
+        year:
+          type: integer
+        totalExits:
+          type: integer
+        byQuarter:
+          type: array
+          items:
+            type: object
+            properties:
+              quarter:
+                type: integer
+              exits:
+                type: integer
+            required: [quarter, exits]
+        avgTenureMonths:
+          type: number
+      required: [year, totalExits, byQuarter, avgTenureMonths]
+
+    # ── ADMIN schemas ──────────────────────────────────────────
+    Department:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        headId:
+          type: ["string", "null"]
+        headName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, name, createdAt]
+
+    CreateDepartmentBody:
+      type: object
+      properties:
+        name:
+          type: string
+        headId:
+          type: ["string", "null"]
+      required: [name]
+
+    Designation:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        departmentId:
+          type: ["string", "null"]
+        departmentName:
+          type: ["string", "null"]
+        level:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+      required: [id, name, createdAt]
+
+    CreateDesignationBody:
+      type: object
+      properties:
+        name:
+          type: string
+        departmentId:
+          type: ["string", "null"]
+        level:
+          type: ["integer", "null"]
+      required: [name]
+
+    CompanyProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        logoUrl:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        updatedAt:
+          type: string
+      required: [id, name, updatedAt]
+
+    UpdateCompanyProfileBody:
+      type: object
+      properties:
+        name:
+          type: string
+        logoUrl:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        email:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+      required: [name]
+
+    LeavePolicy:
+      type: object
+      properties:
+        id:
+          type: string
+        leaveTypeId:
+          type: string
+        leaveTypeName:
+          type: string
+        noLeaveInProbation:
+          type: boolean
+        minNoticeDays:
+          type: integer
+        maxConsecutiveDays:
+          type: ["integer", "null"]
+        notes:
+          type: ["string", "null"]
+        updatedAt:
+          type: string
+      required: [id, leaveTypeId, leaveTypeName, noLeaveInProbation, minNoticeDays, updatedAt]
+
+    CreateLeavePolicyBody:
+      type: object
+      properties:
+        leaveTypeId:
+          type: string
+        noLeaveInProbation:
+          type: boolean
+        minNoticeDays:
+          type: integer
+        maxConsecutiveDays:
+          type: ["integer", "null"]
+        notes:
+          type: ["string", "null"]
+      required: [leaveTypeId, noLeaveInProbation, minNoticeDays]
+
+    NotificationSetting:
+      type: object
+      properties:
+        id:
+          type: string
+        eventType:
+          type: string
+        label:
+          type: string
+        isEnabled:
+          type: boolean
+        updatedAt:
+          type: string
+      required: [id, eventType, label, isEnabled, updatedAt]
+
+    UpdateNotificationSettingBody:
+      type: object
+      properties:
+        eventType:
+          type: string
+        isEnabled:
+          type: boolean
+      required: [eventType, isEnabled]
+
+    FinancialYearConfig:
+      type: object
+      properties:
+        id:
+          type: string
+        startMonth:
+          type: integer
+        startDay:
+          type: integer
+        endMonth:
+          type: integer
+        endDay:
+          type: integer
+        currentYear:
+          type: string
+        updatedAt:
+          type: string
+      required: [id, startMonth, startDay, endMonth, endDay, currentYear, updatedAt]
+
+    UpdateFinancialYearBody:
+      type: object
+      properties:
+        startMonth:
+          type: integer
+        startDay:
+          type: integer
+        endMonth:
+          type: integer
+        endDay:
+          type: integer
+        currentYear:
+          type: string
+      required: [startMonth, startDay, endMonth, endDay, currentYear]
+
+    # ── AUTOMATION schemas ──────────────────────────────────────────
+    AutomationRule:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        code:
+          type: string
+        triggerType:
+          type: string
+        triggerEvent:
+          type: ["string", "null"]
+        cronExpr:
+          type: ["string", "null"]
+        templateId:
+          type: string
+        templateName:
+          type: string
+        recipients:
+          type: string
+        isActive:
+          type: boolean
+        lastRunAt:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+      required: [id, name, code, triggerType, templateId, templateName, recipients, isActive, createdAt]
+
+    ToggleAutomationBody:
+      type: object
+      properties:
+        isActive:
+          type: boolean
+      required: [isActive]
+
+    AutomationLog:
+      type: object
+      properties:
+        id:
+          type: string
+        ruleId:
+          type: string
+        ruleName:
+          type: string
+        employeeId:
+          type: ["string", "null"]
+        employeeName:
+          type: ["string", "null"]
+        templateCode:
+          type: string
+        recipientEmail:
+          type: string
+        status:
+          type: string
+        errorMessage:
+          type: ["string", "null"]
+        sentAt:
+          type: string
+      required: [id, ruleId, ruleName, templateCode, recipientEmail, status, sentAt]
+
+    EmailTemplate:
+      type: object
+      properties:
+        id:
+          type: string
+        code:
+          type: string
+        name:
+          type: string
+        subject:
+          type: string
+        bodyHtml:
+          type: string
+        variables:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+        updatedAt:
+          type: string
+      required: [id, code, name, subject, bodyHtml, variables, isActive, updatedAt]
+
+    CreateEmailTemplateBody:
+      type: object
+      properties:
+        code:
+          type: string
+        name:
+          type: string
+        subject:
+          type: string
+        bodyHtml:
+          type: string
+        variables:
+          type: array
+          items:
+            type: string
+        isActive:
+          type: boolean
+      required: [code, name, subject, bodyHtml]

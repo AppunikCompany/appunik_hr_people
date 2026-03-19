@@ -1,0 +1,85 @@
+import { Switch, Route, Router as WouterRouter } from "wouter";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Toaster } from "sonner";
+import { Layout } from "@/components/Layout";
+import Dashboard from "@/pages/Dashboard";
+import Employees from "@/pages/Employees";
+import EmployeeDetail from "@/pages/EmployeeDetail";
+import Attendance from "@/pages/Attendance";
+import Leave from "@/pages/Leave";
+import Onboarding from "@/pages/Onboarding";
+import Assets from "@/pages/Assets";
+import Performance from "@/pages/Performance";
+import Reports from "@/pages/Reports";
+import Automations from "@/pages/Automations";
+import Settings from "@/pages/Settings";
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+    },
+  },
+});
+
+function NotFound() {
+  return (
+    <div className="flex items-center justify-center h-full min-h-[400px]">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold text-foreground">404</h1>
+        <p className="text-muted-foreground mt-2">Page not found</p>
+      </div>
+    </div>
+  );
+}
+
+function Router() {
+  return (
+    <Layout>
+      <Switch>
+        <Route path="/" component={Dashboard} />
+        <Route path="/employees" component={Employees} />
+        <Route path="/employees/org-chart" component={Employees} />
+        <Route path="/employees/:id" component={EmployeeDetail} />
+        <Route path="/attendance" component={Attendance} />
+        <Route path="/attendance/my" component={Attendance} />
+        <Route path="/attendance/holidays" component={Attendance} />
+        <Route path="/leave" component={Leave} />
+        <Route path="/leave/calendar" component={Leave} />
+        <Route path="/leave/balances" component={Leave} />
+        <Route path="/leave/compoff" component={Leave} />
+        <Route path="/onboarding" component={Onboarding} />
+        <Route path="/assets" component={Assets} />
+        <Route path="/performance" component={Performance} />
+        <Route path="/performance/cycles" component={Performance} />
+        <Route path="/performance/templates" component={Performance} />
+        <Route path="/reports" component={Reports} />
+        <Route path="/reports/attendance" component={Reports} />
+        <Route path="/reports/attrition" component={Reports} />
+        <Route path="/automations" component={Automations} />
+        <Route path="/automations/templates" component={Automations} />
+        <Route path="/automations/logs" component={Automations} />
+        <Route path="/settings" component={Settings} />
+        <Route path="/settings/departments" component={Settings} />
+        <Route path="/settings/designations" component={Settings} />
+        <Route path="/settings/leave-policies" component={Settings} />
+        <Route path="/settings/notifications" component={Settings} />
+        <Route component={NotFound} />
+      </Switch>
+    </Layout>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+        <Router />
+      </WouterRouter>
+      <Toaster richColors position="top-right" />
+    </QueryClientProvider>
+  );
+}
+
+export default App;
