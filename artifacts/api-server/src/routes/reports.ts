@@ -7,6 +7,7 @@ import {
   departmentsTable,
   designationsTable,
   assetsTable,
+  assetCategoriesTable,
   kraAssignmentsTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
@@ -153,12 +154,15 @@ router.get("/reports/asset-inventory", requireAuth, async (_req, res): Promise<v
   try {
     const assets = await db.select().from(assetsTable);
 
+    const categories = await db.select().from(assetCategoriesTable);
+    const catMap = new Map(categories.map((c) => [c.id, c.name]));
+
     const byStatus = new Map<string, number>();
     const byCategory = new Map<string, number>();
 
     for (const asset of assets) {
       byStatus.set(asset.status, (byStatus.get(asset.status) ?? 0) + 1);
-      const cat = asset.category ?? "Uncategorized";
+      const cat = catMap.get(asset.categoryId) ?? "Uncategorized";
       byCategory.set(cat, (byCategory.get(cat) ?? 0) + 1);
     }
 
@@ -201,8 +205,8 @@ router.get("/reports/kra-summary", requireAuth, async (_req, res): Promise<void>
         const dname = emp.departmentId ? (deptMap.get(emp.departmentId) ?? "Unknown") : "Unassigned";
         const curr = byDept.get(dname) ?? { total: 0, score: 0, count: 0 };
         curr.total += 1;
-        if (a.finalScore !== null && a.finalScore !== undefined) {
-          curr.score += a.finalScore;
+        if (a.weightedScore !== null && a.weightedScore !== undefined) {
+          curr.score += a.weightedScore;
           curr.count += 1;
         }
         byDept.set(dname, curr);
@@ -211,7 +215,7 @@ router.get("/reports/kra-summary", requireAuth, async (_req, res): Promise<void>
 
     const completed = assignments.filter((a) => a.status === "completed");
     const avgScore = completed.length > 0
-      ? completed.reduce((s, a) => s + (a.finalScore ?? 0), 0) / completed.length
+      ? completed.reduce((s, a) => s + (a.weightedScore ?? 0), 0) / completed.length
       : 0;
 
     res.json({

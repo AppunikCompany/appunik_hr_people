@@ -8,6 +8,7 @@ import {
   leaveTypesTable,
   assetsTable,
   assetAssignmentsTable,
+  assetCategoriesTable,
 } from "@workspace/db";
 import { eq, and, desc, isNull } from "drizzle-orm";
 import { requireAuth } from "../middlewares/authMiddleware";
@@ -16,7 +17,7 @@ const router: IRouter = Router();
 
 router.get("/self-service/profile/:employeeId", requireAuth, async (req, res): Promise<void> => {
   try {
-    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, (req.params.employeeId as string)));
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, req.params.employeeId as string));
     if (!emp) { res.status(404).json({ error: "Employee not found" }); return; }
     res.json(emp);
   } catch (e) {
@@ -30,7 +31,7 @@ router.get("/self-service/attendance/:employeeId", requireAuth, async (req, res)
     const all = await db
       .select()
       .from(attendanceRecordsTable)
-      .where(eq(attendanceRecordsTable.employeeId, (req.params.employeeId as string)));
+      .where(eq(attendanceRecordsTable.employeeId, req.params.employeeId as string));
 
     let filtered = all;
     if (month && year) {
@@ -70,21 +71,38 @@ router.get("/self-service/leave-summary/:employeeId", requireAuth, async (req, r
     const leaveTypes = await db.select().from(leaveTypesTable);
     const ltMap = new Map(leaveTypes.map((lt) => [lt.id, lt]));
 
-    const recentRequests = await db
+    const allRequests = await db
       .select()
       .from(leaveRequestsTable)
       .where(eq(leaveRequestsTable.employeeId, empId))
-      .orderBy(desc(leaveRequestsTable.appliedAt));
+      .orderBy(desc(leaveRequestsTable.createdAt));
 
-    const enrichedBalances = balances.map((b) => ({
-      ...b,
-      leaveTypeName: ltMap.get(b.leaveTypeId)?.name ?? "Unknown",
-      available: b.allocated - b.used - b.pending,
+    const pendingByType = new Map<string, number>();
+    for (const r of allRequests) {
+      if (r.status === "pending") {
+        pendingByType.set(r.leaveTypeId, (pendingByType.get(r.leaveTypeId) ?? 0) + r.days);
+      }
+    }
+
+    const enrichedBalances = balances.map((b) => {
+      const pending = pendingByType.get(b.leaveTypeId) ?? 0;
+      return {
+        ...b,
+        allocated: b.balance,
+        pending,
+        leaveTypeName: ltMap.get(b.leaveTypeId)?.name ?? "Unknown",
+        available: Math.max(0, b.balance - b.used - pending),
+      };
+    });
+
+    const recentRequests = allRequests.slice(0, 10).map((r) => ({
+      ...r,
+      leaveTypeName: ltMap.get(r.leaveTypeId)?.name ?? "Leave",
     }));
 
     res.json({
       balances: enrichedBalances,
-      recentRequests: recentRequests.slice(0, 10),
+      recentRequests,
     });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -97,7 +115,7 @@ router.get("/self-service/assets/:employeeId", requireAuth, async (req, res): Pr
       .select()
       .from(assetAssignmentsTable)
       .where(and(
-        eq(assetAssignmentsTable.employeeId, (req.params.employeeId as string)),
+        eq(assetAssignmentsTable.employeeId, req.params.employeeId as string),
         isNull(assetAssignmentsTable.returnedAt)
       ));
 
@@ -109,6 +127,9 @@ router.get("/self-service/assets/:employeeId", requireAuth, async (req, res): Pr
         }))
       : [];
 
+    const categories = await db.select().from(assetCategoriesTable);
+    const catMap = new Map(categories.map((c) => [c.id, c.name]));
+
     const result = assignments.map((a) => {
       const asset = assets.find((ast) => ast?.id === a.assetId);
       return {
@@ -116,7 +137,7 @@ router.get("/self-service/assets/:employeeId", requireAuth, async (req, res): Pr
         assetId: a.assetId,
         assetName: asset?.name ?? "Unknown",
         assetCode: asset?.assetCode ?? "",
-        category: asset?.category ?? "",
+        category: asset ? (catMap.get(asset.categoryId) ?? "Uncategorized") : "",
         assignedAt: a.assignedAt,
         notes: a.notes,
       };

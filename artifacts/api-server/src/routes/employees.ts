@@ -195,9 +195,8 @@ router.post("/employees/import", requireAuth, requireRole("super_admin", "hr_adm
             employeeId: employee.id,
             leaveTypeId: lt.id,
             year: new Date().getFullYear(),
-            allocated: lt.defaultDays,
+            balance: lt.maxDaysPerYear,
             used: 0,
-            pending: 0,
           }).onConflictDoNothing();
         }
 

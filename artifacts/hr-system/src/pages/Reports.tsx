@@ -48,7 +48,7 @@ export default function Reports() {
 
   const { data: assetInventory } = useQuery({
     queryKey: ["asset-inventory-report"],
-    queryFn: () => fetchApi<{ total: number; assigned: number; available: number; maintenance: number; retired: number; utilizationRate: number; byCategory: Array<{ category: string; count: number }> }>("/reports/asset-inventory"),
+    queryFn: () => fetchApi<{ total: number; assigned: number; available: number; maintenance: number; retired: number; utilizationRate: number; byStatus: Array<{ status: string; count: number }>; byCategory: Array<{ category: string; count: number }> }>("/reports/asset-inventory"),
   });
 
   const { data: kraSummary } = useQuery({
