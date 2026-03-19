@@ -119,8 +119,8 @@ export async function fireAutomationEvent(opts: FireEventOptions): Promise<void>
     await db.insert(automationLogsTable).values({
       ruleId: rule.id,
       employeeId,
+      templateCode: template.code,
       recipientEmail: recipientEmails.join(", "),
-      subject,
       status,
       errorMessage: errorMsg,
     });

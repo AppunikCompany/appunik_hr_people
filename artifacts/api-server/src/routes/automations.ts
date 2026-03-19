@@ -33,7 +33,7 @@ router.post("/automations/rules/:id/toggle", requireAuth, requireRole("super_adm
     const [rule] = await db
       .update(automationRulesTable)
       .set({ isActive })
-      .where(eq(automationRulesTable.id, req.params.id))
+      .where(eq(automationRulesTable.id, (req.params.id as string)))
       .returning();
     if (!rule) { res.status(404).json({ error: "Not found" }); return; }
     const [tmpl] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.id, rule.templateId));
@@ -95,7 +95,7 @@ router.patch("/automations/email-templates/:id", requireAuth, requireRole("super
     const [tmpl] = await db
       .update(emailTemplatesTable)
       .set(req.body)
-      .where(eq(emailTemplatesTable.id, req.params.id))
+      .where(eq(emailTemplatesTable.id, (req.params.id as string)))
       .returning();
     if (!tmpl) { res.status(404).json({ error: "Not found" }); return; }
     res.json(tmpl);

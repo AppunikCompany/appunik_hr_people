@@ -77,7 +77,7 @@ export default function Settings() {
   const setProfile = (k: string, v: string) => { setProfileForm(f => ({ ...f, [k]: v })); setProfileDirty(true); };
 
   const saveProfile = useMutation({
-    mutationFn: () => fetchApi("/admin/company-profile", { method: "PATCH", body: JSON.stringify({ name: profileForm.name || profile?.name, ...profileForm }) }),
+    mutationFn: () => fetchApi("/admin/company-profile", { method: "PATCH", body: JSON.stringify({ ...profileForm, name: profileForm.name || profile?.name }) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["company-profile"] }); setProfileDirty(false); toast.success("Profile saved"); },
     onError: (e: any) => toast.error(e.message),
   });

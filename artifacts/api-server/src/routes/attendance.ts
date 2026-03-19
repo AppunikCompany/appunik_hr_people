@@ -180,7 +180,7 @@ router.post("/holidays", requireAuth, requireRole("super_admin", "hr_admin"), as
 
 router.delete("/holidays/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    await db.delete(holidaysTable).where(eq(holidaysTable.id, req.params.id));
+    await db.delete(holidaysTable).where(eq(holidaysTable.id, (req.params.id as string)));
     res.status(204).send();
   } catch (e) {
     res.status(500).json({ error: String(e) });

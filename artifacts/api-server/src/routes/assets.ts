@@ -80,7 +80,7 @@ router.post("/assets", requireAuth, requireRole("super_admin", "hr_admin", "it_a
 
 router.get("/assets/:id", requireAuth, async (req, res) => {
   try {
-    const [asset] = await db.select().from(assetsTable).where(eq(assetsTable.id, req.params.id));
+    const [asset] = await db.select().from(assetsTable).where(eq(assetsTable.id, (req.params.id as string)));
     if (!asset) { res.status(404).json({ error: "Not found" }); return; }
     res.json(await enrichAsset(asset));
   } catch (e) {
@@ -90,7 +90,7 @@ router.get("/assets/:id", requireAuth, async (req, res) => {
 
 router.patch("/assets/:id", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res) => {
   try {
-    const [asset] = await db.update(assetsTable).set(req.body).where(eq(assetsTable.id, req.params.id)).returning();
+    const [asset] = await db.update(assetsTable).set(req.body).where(eq(assetsTable.id, (req.params.id as string))).returning();
     if (!asset) { res.status(404).json({ error: "Not found" }); return; }
     res.json(await enrichAsset(asset));
   } catch (e) {
@@ -106,14 +106,14 @@ router.post("/assets/:id/assign", requireAuth, requireRole("super_admin", "hr_ad
     const [asset] = await db
       .update(assetsTable)
       .set({ status: "assigned", assignedToId: employeeId, assignedAt: now })
-      .where(eq(assetsTable.id, req.params.id))
+      .where(eq(assetsTable.id, (req.params.id as string)))
       .returning();
 
     if (!asset) { res.status(404).json({ error: "Not found" }); return; }
 
     const [assignment] = await db
       .insert(assetAssignmentsTable)
-      .values({ assetId: req.params.id, employeeId, notes })
+      .values({ assetId: (req.params.id as string), employeeId, notes })
       .returning();
 
     fireAutomationEvent({
@@ -132,13 +132,13 @@ router.post("/assets/:id/return", requireAuth, requireRole("super_admin", "hr_ad
   try {
     const { condition, notes } = req.body as { condition?: string; notes?: string };
 
-    const [existing] = await db.select().from(assetsTable).where(eq(assetsTable.id, req.params.id));
+    const [existing] = await db.select().from(assetsTable).where(eq(assetsTable.id, (req.params.id as string)));
     const prevEmployeeId = existing?.assignedToId;
 
     const [asset] = await db
       .update(assetsTable)
       .set({ status: "available", assignedToId: null, assignedAt: null, condition: condition ?? undefined })
-      .where(eq(assetsTable.id, req.params.id))
+      .where(eq(assetsTable.id, (req.params.id as string)))
       .returning();
 
     if (!asset) { res.status(404).json({ error: "Not found" }); return; }

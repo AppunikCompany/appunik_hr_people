@@ -92,7 +92,7 @@ router.post("/employees", requireAuth, requireRole("super_admin", "hr_admin"), a
 
 router.get("/employees/:id", requireAuth, async (req, res) => {
   try {
-    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, req.params.id));
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, (req.params.id as string)));
     if (!emp) { res.status(404).json({ error: "Not found" }); return; }
     res.json(await enrichEmployee(emp));
   } catch (e) {
@@ -105,7 +105,7 @@ router.patch("/employees/:id", requireAuth, requireRole("super_admin", "hr_admin
     const [emp] = await db
       .update(employeesTable)
       .set(req.body)
-      .where(eq(employeesTable.id, req.params.id))
+      .where(eq(employeesTable.id, (req.params.id as string)))
       .returning();
     if (!emp) { res.status(404).json({ error: "Not found" }); return; }
     res.json(await enrichEmployee(emp));
@@ -116,7 +116,7 @@ router.patch("/employees/:id", requireAuth, requireRole("super_admin", "hr_admin
 
 router.delete("/employees/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    await db.delete(employeesTable).where(eq(employeesTable.id, req.params.id));
+    await db.delete(employeesTable).where(eq(employeesTable.id, (req.params.id as string)));
     res.status(204).send();
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -125,7 +125,7 @@ router.delete("/employees/:id", requireAuth, requireRole("super_admin", "hr_admi
 
 router.get("/employees/:id/documents", requireAuth, async (req, res) => {
   try {
-    const docs = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.employeeId, req.params.id));
+    const docs = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.employeeId, (req.params.id as string)));
     res.json(docs);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -136,7 +136,7 @@ router.post("/employees/:id/documents", requireAuth, requireRole("super_admin", 
   try {
     const [doc] = await db
       .insert(employeeDocumentsTable)
-      .values({ ...req.body, employeeId: req.params.id })
+      .values({ ...req.body, employeeId: (req.params.id as string) })
       .returning();
     res.status(201).json(doc);
   } catch (e) {
@@ -146,7 +146,7 @@ router.post("/employees/:id/documents", requireAuth, requireRole("super_admin", 
 
 router.get("/employees/:id/history", requireAuth, async (req, res) => {
   try {
-    const history = await db.select().from(employeeHistoryTable).where(eq(employeeHistoryTable.employeeId, req.params.id));
+    const history = await db.select().from(employeeHistoryTable).where(eq(employeeHistoryTable.employeeId, (req.params.id as string)));
     res.json(history);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -157,7 +157,7 @@ router.post("/employees/:id/history", requireAuth, requireRole("super_admin", "h
   try {
     const [entry] = await db
       .insert(employeeHistoryTable)
-      .values({ ...req.body, employeeId: req.params.id })
+      .values({ ...req.body, employeeId: (req.params.id as string) })
       .returning();
     res.status(201).json(entry);
   } catch (e) {

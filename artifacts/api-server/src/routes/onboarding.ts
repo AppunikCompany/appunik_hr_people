@@ -79,7 +79,7 @@ router.post("/onboarding/tasks/:id/complete", requireAuth, async (req, res) => {
     const [task] = await db
       .update(onboardingTasksTable)
       .set({ isCompleted: true, completedAt: new Date() })
-      .where(eq(onboardingTasksTable.id, req.params.id))
+      .where(eq(onboardingTasksTable.id, (req.params.id as string)))
       .returning();
     if (!task) { res.status(404).json({ error: "Not found" }); return; }
 

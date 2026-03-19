@@ -144,7 +144,7 @@ router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin
     const [request] = await db
       .update(leaveRequestsTable)
       .set({ status: "approved", managerComment: comment })
-      .where(eq(leaveRequestsTable.id, req.params.id))
+      .where(eq(leaveRequestsTable.id, (req.params.id as string)))
       .returning();
 
     if (!request) { res.status(404).json({ error: "Not found" }); return; }
@@ -193,7 +193,7 @@ router.post("/leave/requests/:id/reject", requireAuth, requireRole("super_admin"
     const [request] = await db
       .update(leaveRequestsTable)
       .set({ status: "rejected", managerComment: comment })
-      .where(eq(leaveRequestsTable.id, req.params.id))
+      .where(eq(leaveRequestsTable.id, (req.params.id as string)))
       .returning();
 
     if (!request) { res.status(404).json({ error: "Not found" }); return; }

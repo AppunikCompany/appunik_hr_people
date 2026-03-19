@@ -45,7 +45,7 @@ router.post("/admin/departments", requireAuth, requireRole("super_admin", "hr_ad
 
 router.patch("/admin/departments/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [dept] = await db.update(departmentsTable).set(req.body).where(eq(departmentsTable.id, req.params.id)).returning();
+    const [dept] = await db.update(departmentsTable).set(req.body).where(eq(departmentsTable.id, (req.params.id as string))).returning();
     if (!dept) { res.status(404).json({ error: "Not found" }); return; }
     res.json({ ...dept, headName: null });
   } catch (e) {
@@ -55,7 +55,7 @@ router.patch("/admin/departments/:id", requireAuth, requireRole("super_admin", "
 
 router.delete("/admin/departments/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    await db.delete(departmentsTable).where(eq(departmentsTable.id, req.params.id));
+    await db.delete(departmentsTable).where(eq(departmentsTable.id, (req.params.id as string)));
     res.status(204).send();
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -88,7 +88,7 @@ router.post("/admin/designations", requireAuth, requireRole("super_admin", "hr_a
 
 router.patch("/admin/designations/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [desig] = await db.update(designationsTable).set(req.body).where(eq(designationsTable.id, req.params.id)).returning();
+    const [desig] = await db.update(designationsTable).set(req.body).where(eq(designationsTable.id, (req.params.id as string))).returning();
     if (!desig) { res.status(404).json({ error: "Not found" }); return; }
     res.json({ ...desig, departmentName: null });
   } catch (e) {
@@ -98,7 +98,7 @@ router.patch("/admin/designations/:id", requireAuth, requireRole("super_admin", 
 
 router.delete("/admin/designations/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    await db.delete(designationsTable).where(eq(designationsTable.id, req.params.id));
+    await db.delete(designationsTable).where(eq(designationsTable.id, (req.params.id as string)));
     res.status(204).send();
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -168,7 +168,7 @@ router.post("/admin/leave-policies", requireAuth, requireRole("super_admin", "hr
 
 router.patch("/admin/leave-policies/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [policy] = await db.update(leavePoliciesTable).set(req.body).where(eq(leavePoliciesTable.id, req.params.id)).returning();
+    const [policy] = await db.update(leavePoliciesTable).set(req.body).where(eq(leavePoliciesTable.id, (req.params.id as string))).returning();
     if (!policy) { res.status(404).json({ error: "Not found" }); return; }
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, policy.leaveTypeId));
     res.json({ ...policy, leaveTypeName: lt?.name ?? "" });

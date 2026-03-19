@@ -63,7 +63,7 @@ router.post("/kra/review-cycles/:id/close", requireAuth, requireRole("super_admi
     const [cycle] = await db
       .update(reviewCyclesTable)
       .set({ status: "closed" })
-      .where(eq(reviewCyclesTable.id, req.params.id))
+      .where(eq(reviewCyclesTable.id, (req.params.id as string)))
       .returning();
     if (!cycle) { res.status(404).json({ error: "Not found" }); return; }
     res.json(cycle);
@@ -104,7 +104,7 @@ router.post("/kra/assignments/:id/self-assess", requireAuth, async (req, res) =>
     const [assignment] = await db
       .update(kraAssignmentsTable)
       .set({ selfRating, selfComment, status: "self_assessed" })
-      .where(eq(kraAssignmentsTable.id, req.params.id))
+      .where(eq(kraAssignmentsTable.id, (req.params.id as string)))
       .returning();
     if (!assignment) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -119,14 +119,14 @@ router.post("/kra/assignments/:id/self-assess", requireAuth, async (req, res) =>
 router.post("/kra/assignments/:id/manager-rate", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
     const { managerRating, managerComment } = req.body as { managerRating: number; managerComment?: string };
-    const [existing] = await db.select().from(kraAssignmentsTable).where(eq(kraAssignmentsTable.id, req.params.id));
+    const [existing] = await db.select().from(kraAssignmentsTable).where(eq(kraAssignmentsTable.id, (req.params.id as string)));
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
 
     const weightedScore = (managerRating * existing.weightage) / 100;
     const [assignment] = await db
       .update(kraAssignmentsTable)
       .set({ managerRating, managerComment, weightedScore, status: "completed" })
-      .where(eq(kraAssignmentsTable.id, req.params.id))
+      .where(eq(kraAssignmentsTable.id, (req.params.id as string)))
       .returning();
 
     fireAutomationEvent({ event: "kra.completed", employeeId: existing.employeeId }).catch(console.error);
