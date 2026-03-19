@@ -33,9 +33,11 @@ router.post("/attendance/clock-in", requireAuth, async (req, res): Promise<void>
 
     const clockIn = new Date();
     const isLate = clockIn.getHours() > 9 || (clockIn.getHours() === 9 && clockIn.getMinutes() > 30);
+    // If clocking in after 13:00 it counts as a half-day
+    const isHalfDay = clockIn.getHours() >= 13;
     const [record] = await db
       .insert(attendanceRecordsTable)
-      .values({ employeeId, date: today, clockIn, type: "wfo", isLate, isHalfDay: false, notes })
+      .values({ employeeId, date: today, clockIn, type: "wfo", isLate, isHalfDay, notes })
       .returning();
     if (isLate) {
       fireAutomationEvent({ event: "attendance.late_arrival", employeeId, variables: { date: today } }).catch(console.error);
@@ -64,10 +66,12 @@ router.post("/attendance/clock-out", requireAuth, async (req, res): Promise<void
     const hoursWorked = existing.clockIn
       ? (clockOut.getTime() - new Date(existing.clockIn).getTime()) / 3600000
       : null;
+    // Mark half-day if hours worked < 4 (and not already a half-day from late clock-in)
+    const isHalfDay = existing.isHalfDay || (hoursWorked !== null && hoursWorked < 4);
 
     const [record] = await db
       .update(attendanceRecordsTable)
-      .set({ clockOut, hoursWorked, notes: notes ?? existing.notes })
+      .set({ clockOut, hoursWorked, isHalfDay, notes: notes ?? existing.notes })
       .where(eq(attendanceRecordsTable.id, existing.id))
       .returning();
     res.json(record);
@@ -90,6 +94,13 @@ router.post("/attendance/wfh", requireAuth, async (req, res): Promise<void> => {
 
     if (existing.length > 0) {
       res.status(400).json({ error: "Already marked attendance today" });
+      return;
+    }
+
+    // WFH cutoff: cannot mark WFH at or after 10:00 AM
+    const now = new Date();
+    if (now.getHours() >= 10) {
+      res.status(400).json({ error: "WFH can only be marked before 10:00 AM" });
       return;
     }
 

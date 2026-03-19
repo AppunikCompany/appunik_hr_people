@@ -11,11 +11,11 @@ import {
   kraAssignmentsTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { requireAuth } from "../middlewares/authMiddleware";
+import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
 
-router.get("/reports/headcount", requireAuth, async (_req, res): Promise<void> => {
+router.get("/reports/headcount", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (_req, res): Promise<void> => {
   try {
     const employees = await db.select().from(employeesTable);
     const departments = await db.select().from(departmentsTable);
@@ -52,7 +52,7 @@ router.get("/reports/headcount", requireAuth, async (_req, res): Promise<void> =
   }
 });
 
-router.get("/reports/attendance", requireAuth, async (req, res): Promise<void> => {
+router.get("/reports/attendance", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res): Promise<void> => {
   try {
     const { month, year } = req.query as Record<string, string>;
     const m = parseInt(month);
@@ -98,7 +98,7 @@ router.get("/reports/attendance", requireAuth, async (req, res): Promise<void> =
   }
 });
 
-router.get("/reports/wfh-ratio", requireAuth, async (req, res): Promise<void> => {
+router.get("/reports/wfh-ratio", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res): Promise<void> => {
   try {
     const { month, year } = req.query as Record<string, string>;
     const allRecords = await db.select().from(attendanceRecordsTable);
@@ -150,7 +150,7 @@ router.get("/reports/wfh-ratio", requireAuth, async (req, res): Promise<void> =>
   }
 });
 
-router.get("/reports/asset-inventory", requireAuth, async (_req, res): Promise<void> => {
+router.get("/reports/asset-inventory", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (_req, res): Promise<void> => {
   try {
     const assets = await db.select().from(assetsTable);
 
@@ -186,7 +186,7 @@ router.get("/reports/asset-inventory", requireAuth, async (_req, res): Promise<v
   }
 });
 
-router.get("/reports/kra-summary", requireAuth, async (_req, res): Promise<void> => {
+router.get("/reports/kra-summary", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (_req, res): Promise<void> => {
   try {
     const assignments = await db.select().from(kraAssignmentsTable);
     const employees = await db.select().from(employeesTable);
@@ -233,7 +233,7 @@ router.get("/reports/kra-summary", requireAuth, async (_req, res): Promise<void>
   }
 });
 
-router.get("/reports/lop", requireAuth, async (req, res): Promise<void> => {
+router.get("/reports/lop", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res): Promise<void> => {
   try {
     const { month, year } = req.query as Record<string, string>;
     const depts = await db.select().from(departmentsTable);
@@ -267,7 +267,7 @@ router.get("/reports/lop", requireAuth, async (req, res): Promise<void> => {
   }
 });
 
-router.get("/reports/attrition", requireAuth, async (req, res): Promise<void> => {
+router.get("/reports/attrition", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res): Promise<void> => {
   try {
     const { year } = req.query as Record<string, string>;
     const y = parseInt(year);

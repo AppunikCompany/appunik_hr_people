@@ -8,6 +8,7 @@ import {
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
+import { PRIVILEGED_ROLES, resolveEmployeeId } from "../lib/ownership";
 
 const router: IRouter = Router();
 
@@ -31,11 +32,22 @@ async function buildChecklist(checklist: typeof onboardingChecklistsTable.$infer
   };
 }
 
-router.get("/onboarding/checklists", requireAuth, async (req, res) => {
+router.get("/onboarding/checklists", requireAuth, async (req, res): Promise<void> => {
   try {
-    const { employeeId } = req.query as Record<string, string>;
+    const { employeeId: clientId } = req.query as Record<string, string>;
+    const user = req.user;
+
     let checklists = await db.select().from(onboardingChecklistsTable);
-    if (employeeId) checklists = checklists.filter((c) => c.employeeId === employeeId);
+
+    if (!PRIVILEGED_ROLES.has(user?.role ?? "")) {
+      // Employees can only see their own checklist
+      const [self] = await db.select().from(employeesTable).where(eq(employeesTable.userId, user?.id ?? ""));
+      if (!self) { res.status(403).json({ error: "No employee record linked to your account" }); return; }
+      checklists = checklists.filter((c) => c.employeeId === self.id);
+    } else if (clientId) {
+      checklists = checklists.filter((c) => c.employeeId === clientId);
+    }
+
     const result = await Promise.all(checklists.map(buildChecklist));
     res.json(result);
   } catch (e) {

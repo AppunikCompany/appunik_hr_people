@@ -15,7 +15,7 @@ import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 
 const router: IRouter = Router();
 
-router.get("/admin/departments", requireAuth, async (_req, res) => {
+router.get("/admin/departments", requireAuth, requireRole("super_admin", "hr_admin", "it_admin", "manager"), async (_req, res) => {
   try {
     const depts = await db.select().from(departmentsTable);
     const enriched = await Promise.all(
@@ -62,7 +62,7 @@ router.delete("/admin/departments/:id", requireAuth, requireRole("super_admin", 
   }
 });
 
-router.get("/admin/designations", requireAuth, async (_req, res) => {
+router.get("/admin/designations", requireAuth, requireRole("super_admin", "hr_admin", "it_admin", "manager"), async (_req, res) => {
   try {
     const designations = await db.select().from(designationsTable);
     const depts = await db.select().from(departmentsTable);
@@ -105,7 +105,7 @@ router.delete("/admin/designations/:id", requireAuth, requireRole("super_admin",
   }
 });
 
-router.get("/admin/company-profile", requireAuth, async (_req, res): Promise<void> => {
+router.get("/admin/company-profile", requireAuth, requireRole("super_admin", "hr_admin"), async (_req, res): Promise<void> => {
   try {
     const [profile] = await db.select().from(companyProfileTable);
     if (!profile) {
@@ -141,7 +141,7 @@ router.patch("/admin/company-profile", requireAuth, requireRole("super_admin", "
   }
 });
 
-router.get("/admin/leave-policies", requireAuth, async (_req, res) => {
+router.get("/admin/leave-policies", requireAuth, requireRole("super_admin", "hr_admin"), async (_req, res) => {
   try {
     const policies = await db.select().from(leavePoliciesTable);
     const types = await db.select().from(leaveTypesTable);
@@ -177,7 +177,7 @@ router.patch("/admin/leave-policies/:id", requireAuth, requireRole("super_admin"
   }
 });
 
-router.get("/admin/notification-settings", requireAuth, async (_req, res) => {
+router.get("/admin/notification-settings", requireAuth, requireRole("super_admin", "hr_admin"), async (_req, res) => {
   try {
     const settings = await db.select().from(notificationSettingsTable);
     res.json(settings);
@@ -201,7 +201,7 @@ router.patch("/admin/notification-settings", requireAuth, requireRole("super_adm
   }
 });
 
-router.get("/admin/financial-year", requireAuth, async (_req, res): Promise<void> => {
+router.get("/admin/financial-year", requireAuth, requireRole("super_admin", "hr_admin"), async (_req, res): Promise<void> => {
   try {
     const [config] = await db.select().from(financialYearConfigTable);
     if (!config) {

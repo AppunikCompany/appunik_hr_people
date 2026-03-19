@@ -12,6 +12,7 @@ import {
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
+import { PRIVILEGED_ROLES, canReadEmployee } from "../lib/ownership";
 
 const router: IRouter = Router();
 
@@ -62,7 +63,16 @@ function escapeCSV(val: unknown): string {
 router.get("/employees", requireAuth, async (req, res): Promise<void> => {
   try {
     const { search, department, status } = req.query as Record<string, string>;
+    const user = req.user;
+
     let employees = await db.select().from(employeesTable);
+
+    // Non-privileged employees can only see their own record
+    if (!PRIVILEGED_ROLES.has(user?.role ?? "")) {
+      const [self] = await db.select().from(employeesTable).where(eq(employeesTable.userId, user?.id ?? ""));
+      res.json(self ? await Promise.all([enrichEmployee(self)]) : []);
+      return;
+    }
 
     if (status) employees = employees.filter((e) => e.status === status);
     if (department) employees = employees.filter((e) => e.departmentId === department);
@@ -85,7 +95,7 @@ router.get("/employees", requireAuth, async (req, res): Promise<void> => {
   }
 });
 
-router.get("/employees/export", requireAuth, async (_req, res): Promise<void> => {
+router.get("/employees/export", requireAuth, requireRole("super_admin", "hr_admin"), async (_req, res): Promise<void> => {
   try {
     const employees = await db.select().from(employeesTable);
     const depts = await db.select().from(departmentsTable);
@@ -235,7 +245,9 @@ router.post("/employees", requireAuth, requireRole("super_admin", "hr_admin"), a
 
 router.get("/employees/:id", requireAuth, async (req, res): Promise<void> => {
   try {
-    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, (req.params.id as string)));
+    const empId = req.params.id as string;
+    if (!(await canReadEmployee(req, res, empId))) return;
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, empId));
     if (!emp) { res.status(404).json({ error: "Not found" }); return; }
     res.json(await enrichEmployee(emp));
   } catch (e) {

@@ -9,6 +9,7 @@ import {
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
+import { PRIVILEGED_ROLES, resolveEmployeeId } from "../lib/ownership";
 
 const router: IRouter = Router();
 
@@ -72,11 +73,22 @@ router.post("/kra/review-cycles/:id/close", requireAuth, requireRole("super_admi
   }
 });
 
-router.get("/kra/assignments", requireAuth, async (req, res) => {
+router.get("/kra/assignments", requireAuth, async (req, res): Promise<void> => {
   try {
-    const { employeeId, cycleId } = req.query as Record<string, string>;
+    const { employeeId: clientId, cycleId } = req.query as Record<string, string>;
+    const user = req.user;
+
     let assignments = await db.select().from(kraAssignmentsTable);
-    if (employeeId) assignments = assignments.filter((a) => a.employeeId === employeeId);
+
+    if (!PRIVILEGED_ROLES.has(user?.role ?? "")) {
+      // Employees can only see their own assignments
+      const [self] = await db.select().from(employeesTable).where(eq(employeesTable.userId, user?.id ?? ""));
+      if (!self) { res.status(403).json({ error: "No employee record linked to your account" }); return; }
+      assignments = assignments.filter((a) => a.employeeId === self.id);
+    } else if (clientId) {
+      assignments = assignments.filter((a) => a.employeeId === clientId);
+    }
+
     if (cycleId) assignments = assignments.filter((a) => a.cycleId === cycleId);
     const enriched = await Promise.all(assignments.map(enrichAssignment));
     res.json(enriched);
