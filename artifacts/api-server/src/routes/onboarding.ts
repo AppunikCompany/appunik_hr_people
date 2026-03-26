@@ -4,6 +4,7 @@ import {
   onboardingChecklistsTable,
   onboardingTasksTable,
   employeesTable,
+  employeeDocumentsTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
@@ -61,10 +62,9 @@ router.post("/onboarding/checklists", requireAuth, requireRole("super_admin", "h
       employeeId: string;
       tasks?: Array<{ title: string; assignedTo: string; assignedRole: string; dueDate?: string }>;
     };
-    const [checklist] = await db
-      .insert(onboardingChecklistsTable)
-      .values({ employeeId })
-      .returning();
+    const clId = crypto.randomUUID();
+    await db.insert(onboardingChecklistsTable).values({ id: clId, employeeId });
+    const [checklist] = await db.select().from(onboardingChecklistsTable).where(eq(onboardingChecklistsTable.id, clId));
 
     if (tasks && tasks.length > 0) {
       await db.insert(onboardingTasksTable).values(
@@ -88,11 +88,8 @@ router.post("/onboarding/checklists", requireAuth, requireRole("super_admin", "h
 
 router.post("/onboarding/tasks/:id/complete", requireAuth, async (req, res) => {
   try {
-    const [task] = await db
-      .update(onboardingTasksTable)
-      .set({ isCompleted: true, completedAt: new Date() })
-      .where(eq(onboardingTasksTable.id, (req.params.id as string)))
-      .returning();
+    await db.update(onboardingTasksTable).set({ isCompleted: true, completedAt: new Date() }).where(eq(onboardingTasksTable.id, (req.params.id as string)));
+    const [task] = await db.select().from(onboardingTasksTable).where(eq(onboardingTasksTable.id, (req.params.id as string)));
     if (!task) { res.status(404).json({ error: "Not found" }); return; }
 
     const [checklist] = await db
@@ -113,6 +110,118 @@ router.post("/onboarding/tasks/:id/complete", requireAuth, async (req, res) => {
     }
 
     res.json(task);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── OB-03: Document submission tracker — employee uploads, HR verifies ──
+router.get("/onboarding/documents/:employeeId", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const empId = req.params.employeeId as string;
+    const docs = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.employeeId, empId));
+
+    // Expected document types for onboarding
+    const requiredDocs = ["offer_letter", "pan_card", "aadhaar", "degree", "nda", "bank_details", "photo"];
+    const submittedMap = new Map(docs.map((d) => [d.documentType, d]));
+
+    const tracker = requiredDocs.map((docType) => {
+      const doc = submittedMap.get(docType);
+      return {
+        documentType: docType,
+        status: doc ? (doc.verifiedAt ? "verified" : "submitted") : "pending",
+        fileName: doc?.fileName ?? null,
+        fileUrl: doc?.fileUrl ?? null,
+        uploadedAt: doc?.uploadedAt ?? null,
+        verifiedAt: doc?.verifiedAt ?? null,
+        verifiedBy: doc?.verifiedBy ?? null,
+      };
+    });
+
+    res.json(tracker);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── OB-03: HR verifies a submitted document ──
+router.post("/onboarding/documents/:docId/verify", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const docId = req.params.docId as string;
+    await db.update(employeeDocumentsTable)
+      .set({ verifiedAt: new Date(), verifiedBy: req.user?.id ?? null })
+      .where(eq(employeeDocumentsTable.id, docId));
+    const [doc] = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.id, docId));
+    if (!doc) { res.status(404).json({ error: "Document not found" }); return; }
+    res.json(doc);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── OB-04: Account setup checklist with specialized task types ──
+router.post("/onboarding/checklists/:id/setup-tasks", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res): Promise<void> => {
+  try {
+    const checklistId = req.params.id as string;
+    const [checklist] = await db.select().from(onboardingChecklistsTable).where(eq(onboardingChecklistsTable.id, checklistId));
+    if (!checklist) { res.status(404).json({ error: "Checklist not found" }); return; }
+
+    // Default IT account setup tasks
+    const setupTasks = [
+      { title: "Create company email account", assignedTo: "IT Admin", assignedRole: "it_admin" },
+      { title: "Set up Slack workspace access", assignedTo: "IT Admin", assignedRole: "it_admin" },
+      { title: "Grant GitHub/GitLab repository access", assignedTo: "IT Admin", assignedRole: "it_admin" },
+      { title: "Provision project management tools (Jira/Trello)", assignedTo: "IT Admin", assignedRole: "it_admin" },
+      { title: "Set up VPN and security credentials", assignedTo: "IT Admin", assignedRole: "it_admin" },
+      { title: "Configure development environment", assignedTo: "IT Admin", assignedRole: "it_admin" },
+    ];
+
+    await db.insert(onboardingTasksTable).values(
+      setupTasks.map((t) => ({
+        id: crypto.randomUUID(),
+        checklistId,
+        title: t.title,
+        assignedTo: t.assignedTo,
+        assignedRole: t.assignedRole,
+      }))
+    );
+
+    res.status(201).json(await buildChecklist(checklist));
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── OB-06: Auto-trigger asset assignment on joining ──
+// This fires when onboarding starts (already called in POST /onboarding/checklists).
+// Adding explicit endpoint to trigger asset assignment checklist for a new joiner.
+router.post("/onboarding/checklists/:id/assign-assets", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res): Promise<void> => {
+  try {
+    const checklistId = req.params.id as string;
+    const [checklist] = await db.select().from(onboardingChecklistsTable).where(eq(onboardingChecklistsTable.id, checklistId));
+    if (!checklist) { res.status(404).json({ error: "Checklist not found" }); return; }
+
+    const assetTasks = [
+      { title: "Assign laptop", assignedTo: "IT Admin", assignedRole: "it_admin" },
+      { title: "Assign monitor/display", assignedTo: "IT Admin", assignedRole: "it_admin" },
+      { title: "Assign keyboard & mouse", assignedTo: "IT Admin", assignedRole: "it_admin" },
+      { title: "Assign headset", assignedTo: "IT Admin", assignedRole: "it_admin" },
+      { title: "Assign access card/badge", assignedTo: "HR Admin", assignedRole: "hr_admin" },
+    ];
+
+    await db.insert(onboardingTasksTable).values(
+      assetTasks.map((t) => ({
+        id: crypto.randomUUID(),
+        checklistId,
+        title: t.title,
+        assignedTo: t.assignedTo,
+        assignedRole: t.assignedRole,
+      }))
+    );
+
+    fireAutomationEvent({ event: "onboarding.started", employeeId: checklist.employeeId }).catch(console.error);
+
+    res.status(201).json(await buildChecklist(checklist));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

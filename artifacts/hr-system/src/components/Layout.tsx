@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useRoute } from "wouter";
+import { useClerk } from "@clerk/clerk-react";
 import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/hooks/useApi";
 import {
@@ -202,7 +203,7 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const { data: user } = useCurrentUser();
-  const BASE_URL = import.meta.env.BASE_URL ?? "/";
+  const { signOut } = useClerk();
 
   const initials = [user?.firstName, user?.lastName]
     .filter(Boolean)
@@ -264,10 +265,8 @@ export function Layout({ children }: LayoutProps) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <a href={`${BASE_URL.replace(/\/$/, "")}/api/logout`} className="flex items-center gap-2 text-destructive">
-                  <LogOut className="w-4 h-4" /> Logout
-                </a>
+              <DropdownMenuItem onClick={() => signOut()} className="flex items-center gap-2 text-destructive cursor-pointer">
+                <LogOut className="w-4 h-4" /> Logout
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

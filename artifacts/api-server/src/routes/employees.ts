@@ -9,7 +9,7 @@ import {
   leaveBalancesTable,
   leaveTypesTable,
 } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
 import { PRIVILEGED_ROLES, canReadEmployee } from "../lib/ownership";
@@ -182,9 +182,9 @@ router.post("/employees/import", requireAuth, requireRole("super_admin", "hr_adm
         const joiningDate = row["Joining Date"] || new Date().toISOString().split("T")[0];
 
         const code = await nextEmployeeCode();
-        const [employee] = await db
-          .insert(employeesTable)
-          .values({
+        const empId = crypto.randomUUID();
+        await db.insert(employeesTable).values({
+            id: empId,
             employeeCode: code,
             firstName,
             lastName,
@@ -197,17 +197,19 @@ router.post("/employees/import", requireAuth, requireRole("super_admin", "hr_adm
             gender: row["Gender"] ?? null,
             dateOfBirth: row["Date of Birth"] ?? null,
             status: "active",
-          })
-          .returning();
+          });
+        const [employee] = await db.select().from(employeesTable).where(eq(employeesTable.id, empId));
 
         for (const lt of leaveTypes) {
+          const balId = crypto.randomUUID();
           await db.insert(leaveBalancesTable).values({
+            id: balId,
             employeeId: employee.id,
             leaveTypeId: lt.id,
             year: new Date().getFullYear(),
             balance: lt.maxDaysPerYear,
             used: 0,
-          }).onConflictDoNothing();
+          }).onDuplicateKeyUpdate({ set: { id: sql`id` } });
         }
 
         fireAutomationEvent({ event: "employee.created", employeeId: employee.id }).catch(console.error);
@@ -229,10 +231,9 @@ router.post("/employees/import", requireAuth, requireRole("super_admin", "hr_adm
 router.post("/employees", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
     const code = await nextEmployeeCode();
-    const [employee] = await db
-      .insert(employeesTable)
-      .values({ ...req.body, employeeCode: code })
-      .returning();
+    const newEmpId = crypto.randomUUID();
+    await db.insert(employeesTable).values({ ...req.body, id: newEmpId, employeeCode: code });
+    const [employee] = await db.select().from(employeesTable).where(eq(employeesTable.id, newEmpId));
     const enriched = await enrichEmployee(employee);
 
     fireAutomationEvent({ event: "employee.created", employeeId: employee.id }).catch(console.error);
@@ -258,14 +259,12 @@ router.get("/employees/:id", requireAuth, async (req, res): Promise<void> => {
 router.patch("/employees/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
     const [before] = await db.select().from(employeesTable).where(eq(employeesTable.id, (req.params.id as string)));
-    const [emp] = await db
-      .update(employeesTable)
-      .set(req.body)
-      .where(eq(employeesTable.id, (req.params.id as string)))
-      .returning();
+    await db.update(employeesTable).set(req.body).where(eq(employeesTable.id, (req.params.id as string)));
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, (req.params.id as string)));
     if (!emp) { res.status(404).json({ error: "Not found" }); return; }
 
-    if (before && before.status === "active" && (emp.status === "resigned" || emp.status === "terminated")) {
+    // AM-10: When employee moves to notice/resigned/terminated, fire offboarding + asset return event
+    if (before && before.status === "active" && (emp.status === "resigned" || emp.status === "terminated" || emp.status === "notice")) {
       fireAutomationEvent({ event: "employee.offboarding_started", employeeId: emp.id }).catch(console.error);
     }
 
@@ -295,10 +294,9 @@ router.get("/employees/:id/documents", requireAuth, async (req, res): Promise<vo
 
 router.post("/employees/:id/documents", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
-    const [doc] = await db
-      .insert(employeeDocumentsTable)
-      .values({ ...req.body, employeeId: (req.params.id as string) })
-      .returning();
+    const docId = crypto.randomUUID();
+    await db.insert(employeeDocumentsTable).values({ ...req.body, id: docId, employeeId: (req.params.id as string) });
+    const [doc] = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.id, docId));
     res.status(201).json(doc);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -316,10 +314,9 @@ router.get("/employees/:id/history", requireAuth, async (req, res): Promise<void
 
 router.post("/employees/:id/history", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
-    const [entry] = await db
-      .insert(employeeHistoryTable)
-      .values({ ...req.body, employeeId: (req.params.id as string) })
-      .returning();
+    const histId = crypto.randomUUID();
+    await db.insert(employeeHistoryTable).values({ ...req.body, id: histId, employeeId: (req.params.id as string) });
+    const [entry] = await db.select().from(employeeHistoryTable).where(eq(employeeHistoryTable.id, histId));
     res.status(201).json(entry);
   } catch (e) {
     res.status(500).json({ error: String(e) });

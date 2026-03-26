@@ -6,9 +6,10 @@ import {
   assetAssignmentsTable,
   employeesTable,
 } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, and, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
+import { importLogsTable } from "@workspace/db";
 
 const router: IRouter = Router();
 
@@ -47,7 +48,9 @@ router.get("/assets/categories", requireAuth, async (_req, res) => {
 
 router.post("/assets/categories", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res) => {
   try {
-    const [cat] = await db.insert(assetCategoriesTable).values(req.body).returning();
+    const catId = crypto.randomUUID();
+    await db.insert(assetCategoriesTable).values({ ...req.body, id: catId });
+    const [cat] = await db.select().from(assetCategoriesTable).where(eq(assetCategoriesTable.id, catId));
     res.status(201).json(cat);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -71,7 +74,9 @@ router.get("/assets", requireAuth, async (req, res) => {
 router.post("/assets", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res) => {
   try {
     const code = await nextAssetCode();
-    const [asset] = await db.insert(assetsTable).values({ ...req.body, assetCode: code, status: "available" }).returning();
+    const astId = crypto.randomUUID();
+    await db.insert(assetsTable).values({ ...req.body, id: astId, assetCode: code, status: "available" });
+    const [asset] = await db.select().from(assetsTable).where(eq(assetsTable.id, astId));
     res.status(201).json(await enrichAsset(asset));
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -90,7 +95,8 @@ router.get("/assets/:id", requireAuth, async (req, res) => {
 
 router.patch("/assets/:id", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res) => {
   try {
-    const [asset] = await db.update(assetsTable).set(req.body).where(eq(assetsTable.id, (req.params.id as string))).returning();
+    await db.update(assetsTable).set(req.body).where(eq(assetsTable.id, (req.params.id as string)));
+    const [asset] = await db.select().from(assetsTable).where(eq(assetsTable.id, (req.params.id as string)));
     if (!asset) { res.status(404).json({ error: "Not found" }); return; }
     res.json(await enrichAsset(asset));
   } catch (e) {
@@ -103,18 +109,14 @@ router.post("/assets/:id/assign", requireAuth, requireRole("super_admin", "hr_ad
     const { employeeId, notes } = req.body as { employeeId: string; notes?: string };
     const now = new Date();
 
-    const [asset] = await db
-      .update(assetsTable)
-      .set({ status: "assigned", assignedToId: employeeId, assignedAt: now })
-      .where(eq(assetsTable.id, (req.params.id as string)))
-      .returning();
+    await db.update(assetsTable).set({ status: "assigned", assignedToId: employeeId, assignedAt: now }).where(eq(assetsTable.id, (req.params.id as string)));
+    const [asset] = await db.select().from(assetsTable).where(eq(assetsTable.id, (req.params.id as string)));
 
     if (!asset) { res.status(404).json({ error: "Not found" }); return; }
 
-    const [assignment] = await db
-      .insert(assetAssignmentsTable)
-      .values({ assetId: (req.params.id as string), employeeId, notes })
-      .returning();
+    const assignId = crypto.randomUUID();
+    await db.insert(assetAssignmentsTable).values({ id: assignId, assetId: (req.params.id as string), employeeId, notes });
+    const [assignment] = await db.select().from(assetAssignmentsTable).where(eq(assetAssignmentsTable.id, assignId));
 
     fireAutomationEvent({
       event: "asset.assigned",
@@ -135,11 +137,8 @@ router.post("/assets/:id/return", requireAuth, requireRole("super_admin", "hr_ad
     const [existing] = await db.select().from(assetsTable).where(eq(assetsTable.id, (req.params.id as string)));
     const prevEmployeeId = existing?.assignedToId;
 
-    const [asset] = await db
-      .update(assetsTable)
-      .set({ status: "available", assignedToId: null, assignedAt: null, condition: condition ?? undefined })
-      .where(eq(assetsTable.id, (req.params.id as string)))
-      .returning();
+    await db.update(assetsTable).set({ status: "available", assignedToId: null, assignedAt: null, condition: condition ?? undefined }).where(eq(assetsTable.id, (req.params.id as string)));
+    const [asset] = await db.select().from(assetsTable).where(eq(assetsTable.id, (req.params.id as string)));
 
     if (!asset) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -152,6 +151,154 @@ router.post("/assets/:id/return", requireAuth, requireRole("super_admin", "hr_ad
     }
 
     res.json(await enrichAsset(asset));
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── AM-08: Asset acknowledgment — employee confirms receipt ──
+router.post("/assets/:id/acknowledge", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const assetId = req.params.id as string;
+    // Find the latest unacknowledged assignment for this asset
+    const assignments = await db.select().from(assetAssignmentsTable)
+      .where(and(eq(assetAssignmentsTable.assetId, assetId), isNull(assetAssignmentsTable.returnedAt)));
+    const latest = assignments[assignments.length - 1];
+    if (!latest) { res.status(404).json({ error: "No active assignment found for this asset" }); return; }
+    if (latest.acknowledgedAt) { res.status(400).json({ error: "Already acknowledged" }); return; }
+
+    await db.update(assetAssignmentsTable).set({ acknowledgedAt: new Date() }).where(eq(assetAssignmentsTable.id, latest.id));
+    const [updated] = await db.select().from(assetAssignmentsTable).where(eq(assetAssignmentsTable.id, latest.id));
+    res.json(updated);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── AM-09: Depreciation tracking ──
+router.get("/assets/:id/depreciation", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const [asset] = await db.select().from(assetsTable).where(eq(assetsTable.id, (req.params.id as string)));
+    if (!asset) { res.status(404).json({ error: "Not found" }); return; }
+
+    const [cat] = await db.select().from(assetCategoriesTable).where(eq(assetCategoriesTable.id, asset.categoryId));
+    const rate = cat?.depreciationRate ?? 0; // annual percentage
+    const cost = asset.purchaseCost ?? 0;
+
+    if (!asset.purchaseDate || cost === 0) {
+      res.json({ assetId: asset.id, purchaseCost: cost, currentValue: cost, depreciatedAmount: 0, yearsOwned: 0, annualRate: rate });
+      return;
+    }
+
+    const purchaseDate = new Date(asset.purchaseDate);
+    const yearsOwned = (Date.now() - purchaseDate.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+    // Straight-line depreciation
+    const depreciatedAmount = Math.min(cost, cost * (rate / 100) * yearsOwned);
+    const currentValue = Math.max(0, cost - depreciatedAmount);
+
+    res.json({
+      assetId: asset.id,
+      assetCode: asset.assetCode,
+      name: asset.name,
+      purchaseCost: cost,
+      purchaseDate: asset.purchaseDate,
+      annualRate: rate,
+      yearsOwned: Math.round(yearsOwned * 10) / 10,
+      depreciatedAmount: Math.round(depreciatedAmount * 100) / 100,
+      currentValue: Math.round(currentValue * 100) / 100,
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── AM-12 / BI-06: Bulk asset import ──
+router.post("/assets/import", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (req, res): Promise<void> => {
+  try {
+    const { rows } = req.body as { rows: Record<string, string>[] };
+    if (!Array.isArray(rows) || rows.length === 0) { res.status(400).json({ error: "No rows provided" }); return; }
+
+    const categories = await db.select().from(assetCategoriesTable);
+    const catByName = new Map(categories.map((c) => [c.name.toLowerCase(), c.id]));
+
+    const results: Array<{ row: number; status: "created" | "error"; error?: string; assetCode?: string }> = [];
+    let created = 0;
+    let errors = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      try {
+        const name = row["Name"]?.trim();
+        const categoryName = row["Category"]?.trim();
+        if (!name) { results.push({ row: i + 1, status: "error", error: "Name is required" }); errors++; continue; }
+        if (!categoryName) { results.push({ row: i + 1, status: "error", error: "Category is required" }); errors++; continue; }
+
+        const categoryId = catByName.get(categoryName.toLowerCase());
+        if (!categoryId) { results.push({ row: i + 1, status: "error", error: `Category "${categoryName}" not found` }); errors++; continue; }
+
+        const code = await nextAssetCode();
+        const astId = crypto.randomUUID();
+        await db.insert(assetsTable).values({
+          id: astId,
+          assetCode: code,
+          name,
+          categoryId,
+          serialNumber: row["Serial Number"] ?? null,
+          purchaseDate: row["Purchase Date"] ?? null,
+          purchaseCost: row["Purchase Cost"] ? parseFloat(row["Purchase Cost"]) : null,
+          condition: row["Condition"] ?? null,
+          notes: row["Notes"] ?? null,
+          status: "available",
+        });
+        results.push({ row: i + 1, status: "created", assetCode: code });
+        created++;
+      } catch (rowErr) {
+        results.push({ row: i + 1, status: "error", error: String(rowErr) });
+        errors++;
+      }
+    }
+
+    // BI-11: Log the import
+    const logId = crypto.randomUUID();
+    await db.insert(importLogsTable).values({
+      id: logId, importType: "assets", totalRows: rows.length,
+      successCount: created, errorCount: errors,
+      errors: results.filter((r) => r.status === "error").map((r) => ({ row: r.row, error: r.error! })),
+      importedBy: req.user?.id ?? null,
+    });
+
+    res.json({ created, errors, results });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── BI-07: Asset inventory bulk export as CSV ──
+router.get("/assets/export", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (_req, res): Promise<void> => {
+  try {
+    const assets = await db.select().from(assetsTable);
+    const categories = await db.select().from(assetCategoriesTable);
+    const employees = await db.select().from(employeesTable);
+    const catMap = new Map(categories.map((c) => [c.id, c.name]));
+    const empMap = new Map(employees.map((e) => [e.id, `${e.firstName} ${e.lastName}`]));
+
+    const headers = ["Asset Code", "Name", "Category", "Serial Number", "Status", "Assigned To", "Purchase Date", "Purchase Cost", "Condition"];
+    const rows = assets.map((a) => [
+      a.assetCode,
+      a.name,
+      catMap.get(a.categoryId) ?? "",
+      a.serialNumber ?? "",
+      a.status,
+      a.assignedToId ? (empMap.get(a.assignedToId) ?? "") : "",
+      a.purchaseDate ?? "",
+      a.purchaseCost ?? "",
+      a.condition ?? "",
+    ].map((v) => `"${String(v).replace(/"/g, '""')}"`));
+
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=asset_inventory.csv");
+    res.send(csv);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

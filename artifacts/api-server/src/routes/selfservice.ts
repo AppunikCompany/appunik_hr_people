@@ -9,6 +9,9 @@ import {
   assetsTable,
   assetAssignmentsTable,
   assetCategoriesTable,
+  employeeDocumentsTable,
+  kraAssignmentsTable,
+  reviewCyclesTable,
 } from "@workspace/db";
 import { eq, and, desc, isNull } from "drizzle-orm";
 import { requireAuth } from "../middlewares/authMiddleware";
@@ -155,6 +158,136 @@ router.get("/self-service/assets/:employeeId", requireAuth, async (req: Request,
     });
 
     res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── SS-05: Employee document download (list own documents) ──
+router.get("/self-service/documents/:employeeId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const empId = req.params.employeeId as string;
+    if (!(await canReadEmployee(req, res, empId))) return;
+    const docs = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.employeeId, empId));
+    res.json(docs);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── SS-08: KRA Dashboard — view own KRAs, ratings, review status ──
+router.get("/self-service/kra/:employeeId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const empId = req.params.employeeId as string;
+    if (!(await canReadEmployee(req, res, empId))) return;
+
+    const assignments = await db.select().from(kraAssignmentsTable).where(eq(kraAssignmentsTable.employeeId, empId));
+    const cycles = await db.select().from(reviewCyclesTable);
+    const cycleMap = new Map(cycles.map((c) => [c.id, c]));
+
+    const result = assignments.map((a) => {
+      const cycle = cycleMap.get(a.cycleId);
+      return {
+        ...a,
+        cycleName: cycle?.name ?? "",
+        cycleStatus: cycle?.status ?? "",
+        cycleType: cycle?.cycleType ?? "",
+      };
+    });
+
+    // Group by cycle
+    const byCycle = new Map<string, { cycle: typeof cycles[0] | undefined; assignments: typeof result }>(); 
+    for (const a of result) {
+      const existing = byCycle.get(a.cycleId);
+      if (existing) {
+        existing.assignments.push(a);
+      } else {
+        byCycle.set(a.cycleId, { cycle: cycleMap.get(a.cycleId), assignments: [a] });
+      }
+    }
+
+    const grouped = Array.from(byCycle.values()).map((g) => {
+      const completed = g.assignments.filter((a) => a.status === "completed");
+      const totalWeightedScore = completed.reduce((s, a) => s + (a.weightedScore ?? 0), 0);
+      return {
+        cycleId: g.cycle?.id ?? "",
+        cycleName: g.cycle?.name ?? "",
+        cycleStatus: g.cycle?.status ?? "",
+        assignments: g.assignments,
+        totalWeightedScore: Math.round(totalWeightedScore * 10) / 10,
+        completedCount: completed.length,
+        totalCount: g.assignments.length,
+      };
+    });
+
+    res.json(grouped);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── SS-10: Personal data export (attendance or leave as CSV) ──
+router.get("/self-service/export/:employeeId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const empId = req.params.employeeId as string;
+    if (!(await canReadEmployee(req, res, empId))) return;
+    const type = req.query.type as string;
+
+    if (type === "attendance") {
+      const records = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.employeeId, empId));
+      const headers = ["Date", "Type", "Clock In", "Clock Out", "Hours Worked", "Late", "Half Day"];
+      const rows = records.map((r) => [
+        r.date, r.type, r.clockIn?.toISOString() ?? "", r.clockOut?.toISOString() ?? "",
+        r.hoursWorked?.toFixed(1) ?? "", r.isLate ? "Yes" : "No", r.isHalfDay ? "Yes" : "No",
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`));
+      const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=my_attendance.csv");
+      res.send(csv);
+    } else if (type === "leave") {
+      const requests = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.employeeId, empId));
+      const leaveTypes = await db.select().from(leaveTypesTable);
+      const ltMap = new Map(leaveTypes.map((lt) => [lt.id, lt.name]));
+      const headers = ["Leave Type", "Start Date", "End Date", "Days", "Status", "Reason"];
+      const rows = requests.map((r) => [
+        ltMap.get(r.leaveTypeId) ?? "", r.startDate, r.endDate, r.days, r.status, r.reason ?? "",
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`));
+      const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=my_leave_history.csv");
+      res.send(csv);
+    } else {
+      res.status(400).json({ error: "type must be 'attendance' or 'leave'" });
+    }
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── SS-01: Employee self-service profile update ──
+router.patch("/self-service/profile/:employeeId", requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const empId = req.params.employeeId as string;
+    if (!(await canReadEmployee(req, res, empId))) return;
+
+    // Only allow updating personal fields, not employment/admin fields
+    const { phone, address, emergencyContact, emergencyPhone, gender, dateOfBirth } = req.body as Record<string, string>;
+    const updates: Record<string, unknown> = {};
+    if (phone !== undefined) updates.phone = phone;
+    if (address !== undefined) updates.address = address;
+    if (emergencyContact !== undefined) updates.emergencyContact = emergencyContact;
+    if (emergencyPhone !== undefined) updates.emergencyPhone = emergencyPhone;
+    if (gender !== undefined) updates.gender = gender;
+    if (dateOfBirth !== undefined) updates.dateOfBirth = dateOfBirth;
+
+    if (Object.keys(updates).length === 0) {
+      res.status(400).json({ error: "No valid fields to update" });
+      return;
+    }
+
+    await db.update(employeesTable).set(updates).where(eq(employeesTable.id, empId));
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, empId));
+    res.json(emp);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

@@ -4,6 +4,8 @@ import {
   employeesTable,
   attendanceRecordsTable,
   leaveRequestsTable,
+  leaveBalancesTable,
+  leaveTypesTable,
   departmentsTable,
   designationsTable,
   assetsTable,
@@ -307,6 +309,66 @@ router.get("/reports/attrition", requireAuth, requireRole("super_admin", "hr_adm
       byQuarter: quarters,
       avgTenureMonths: Math.round(avgTenure),
       byDepartment: Array.from(byDept.entries()).map(([department, count]) => ({ department, count })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── RP-03: Leave utilization report ──
+router.get("/reports/leave-utilization", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res): Promise<void> => {
+  try {
+    const year = parseInt((req.query.year as string) ?? String(new Date().getFullYear()));
+    const employees = await db.select().from(employeesTable).where(eq(employeesTable.status, "active"));
+    const depts = await db.select().from(departmentsTable);
+    const deptMap = new Map(depts.map((d) => [d.id, d.name]));
+    const leaveTypes = await db.select().from(leaveTypesTable);
+    const ltMap = new Map(leaveTypes.map((lt) => [lt.id, lt.name]));
+    const balances = await db.select().from(leaveBalancesTable);
+    const yearBalances = balances.filter((b) => b.year === year);
+
+    // Per-employee summary
+    const byEmployee = employees.map((emp) => {
+      const empBalances = yearBalances.filter((b) => b.employeeId === emp.id);
+      const totalAllocated = empBalances.reduce((s, b) => s + b.balance + b.used, 0);
+      const totalUsed = empBalances.reduce((s, b) => s + b.used, 0);
+      const totalRemaining = empBalances.reduce((s, b) => s + b.balance, 0);
+      return {
+        employeeId: emp.id,
+        employeeName: `${emp.firstName} ${emp.lastName}`,
+        department: emp.departmentId ? (deptMap.get(emp.departmentId) ?? null) : null,
+        totalAllocated,
+        totalUsed,
+        totalRemaining,
+        utilizationPercent: totalAllocated > 0 ? Math.round((totalUsed / totalAllocated) * 100) : 0,
+      };
+    });
+
+    // Per-leave-type summary
+    const byType = leaveTypes.map((lt) => {
+      const typeBals = yearBalances.filter((b) => b.leaveTypeId === lt.id);
+      const totalAllocated = typeBals.reduce((s, b) => s + b.balance + b.used, 0);
+      const totalUsed = typeBals.reduce((s, b) => s + b.used, 0);
+      return {
+        leaveTypeId: lt.id,
+        leaveTypeName: lt.name,
+        totalAllocated,
+        totalUsed,
+        totalRemaining: totalAllocated - totalUsed,
+        utilizationPercent: totalAllocated > 0 ? Math.round((totalUsed / totalAllocated) * 100) : 0,
+      };
+    });
+
+    const grandTotal = yearBalances.reduce((s, b) => s + b.balance + b.used, 0);
+    const grandUsed = yearBalances.reduce((s, b) => s + b.used, 0);
+
+    res.json({
+      year,
+      totalAllocated: grandTotal,
+      totalUsed: grandUsed,
+      overallUtilization: grandTotal > 0 ? Math.round((grandUsed / grandTotal) * 100) : 0,
+      byEmployee,
+      byType,
     });
   } catch (e) {
     res.status(500).json({ error: String(e) });

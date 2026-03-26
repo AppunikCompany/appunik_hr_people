@@ -6,6 +6,7 @@ import {
   holidaysTable,
   employeesTable,
   departmentsTable,
+  appConfigTable,
 } from "@workspace/db";
 import { eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
@@ -35,10 +36,9 @@ router.post("/attendance/clock-in", requireAuth, async (req, res): Promise<void>
     const isLate = clockIn.getHours() > 9 || (clockIn.getHours() === 9 && clockIn.getMinutes() > 30);
     // If clocking in after 13:00 it counts as a half-day
     const isHalfDay = clockIn.getHours() >= 13;
-    const [record] = await db
-      .insert(attendanceRecordsTable)
-      .values({ employeeId, date: today, clockIn, type: "wfo", isLate, isHalfDay, notes })
-      .returning();
+    const recId = crypto.randomUUID();
+    await db.insert(attendanceRecordsTable).values({ id: recId, employeeId, date: today, clockIn, type: "wfo", isLate, isHalfDay, notes });
+    const [record] = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, recId));
     if (isLate) {
       fireAutomationEvent({ event: "attendance.late_arrival", employeeId, variables: { date: today } }).catch(console.error);
     }
@@ -69,11 +69,8 @@ router.post("/attendance/clock-out", requireAuth, async (req, res): Promise<void
     // Mark half-day if hours worked < 4 (and not already a half-day from late clock-in)
     const isHalfDay = existing.isHalfDay || (hoursWorked !== null && hoursWorked < 4);
 
-    const [record] = await db
-      .update(attendanceRecordsTable)
-      .set({ clockOut, hoursWorked, isHalfDay, notes: notes ?? existing.notes })
-      .where(eq(attendanceRecordsTable.id, existing.id))
-      .returning();
+    await db.update(attendanceRecordsTable).set({ clockOut, hoursWorked, isHalfDay, notes: notes ?? existing.notes }).where(eq(attendanceRecordsTable.id, existing.id));
+    const [record] = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, existing.id));
     res.json(record);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -104,11 +101,24 @@ router.post("/attendance/wfh", requireAuth, async (req, res): Promise<void> => {
       return;
     }
 
-    const [record] = await db
-      .insert(attendanceRecordsTable)
-      .values({ employeeId, date: today, type: "wfh", isLate: false, isHalfDay: false, notes })
-      .returning();
-    res.status(201).json(record);
+    // AU-19: Check if WFH requires manager approval
+    const [wfhCfg] = await db.select().from(appConfigTable).where(eq(appConfigTable.key, "wfh_requires_approval"));
+    const needsApproval = wfhCfg?.value === "true";
+
+    const wfhId = crypto.randomUUID();
+    const wfhType = needsApproval ? "wfh_pending" : "wfh";
+    await db.insert(attendanceRecordsTable).values({ id: wfhId, employeeId, date: today, type: wfhType, isLate: false, isHalfDay: false, notes });
+    const [record] = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, wfhId));
+
+    if (needsApproval) {
+      // Notify manager
+      const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
+      if (emp?.reportingManagerId) {
+        fireAutomationEvent({ event: "employee.created", employeeId, variables: { eventType: "wfh_approval_request", date: today } }).catch(console.error);
+      }
+    }
+
+    res.status(201).json({ ...record, needsApproval });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -185,7 +195,9 @@ router.get("/attendance/team", requireAuth, async (_req, res) => {
 
 router.post("/attendance/overtime", requireAuth, async (req, res) => {
   try {
-    const [log] = await db.insert(overtimeLogsTable).values(req.body).returning();
+    const otId = crypto.randomUUID();
+    await db.insert(overtimeLogsTable).values({ ...req.body, id: otId });
+    const [log] = await db.select().from(overtimeLogsTable).where(eq(overtimeLogsTable.id, otId));
     res.status(201).json(log);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -205,8 +217,78 @@ router.get("/holidays", requireAuth, async (req, res) => {
 
 router.post("/holidays", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [holiday] = await db.insert(holidaysTable).values(req.body).returning();
+    const holId = crypto.randomUUID();
+    await db.insert(holidaysTable).values({ ...req.body, id: holId });
+    const [holiday] = await db.select().from(holidaysTable).where(eq(holidaysTable.id, holId));
     res.status(201).json(holiday);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── AT-10 / BI-03: Bulk attendance export as CSV ──
+router.get("/attendance/export", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const { month, year } = req.query as Record<string, string>;
+    const m = parseInt(month);
+    const y = parseInt(year);
+    if (!m || !y) { res.status(400).json({ error: "month and year are required" }); return; }
+
+    const employees = await db.select().from(employeesTable).where(eq(employeesTable.status, "active"));
+    const allRecords = await db.select().from(attendanceRecordsTable);
+    const depts = await db.select().from(departmentsTable);
+    const deptMap = new Map(depts.map((d) => [d.id, d.name]));
+
+    const filtered = allRecords.filter((r) => {
+      const d = new Date(r.date);
+      return d.getMonth() + 1 === m && d.getFullYear() === y;
+    });
+
+    const headers = ["Employee Code", "Name", "Department", "Date", "Type", "Clock In", "Clock Out", "Hours Worked", "Late", "Half Day"];
+    const rows = filtered.map((r) => {
+      const emp = employees.find((e) => e.id === r.employeeId);
+      return [
+        emp?.employeeCode ?? "",
+        emp ? `${emp.firstName} ${emp.lastName}` : "",
+        emp?.departmentId ? (deptMap.get(emp.departmentId) ?? "") : "",
+        r.date,
+        r.type,
+        r.clockIn?.toISOString() ?? "",
+        r.clockOut?.toISOString() ?? "",
+        r.hoursWorked?.toFixed(1) ?? "",
+        r.isLate ? "Yes" : "No",
+        r.isHalfDay ? "Yes" : "No",
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`);
+    });
+
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename=attendance_${y}_${m}.csv`);
+    res.send(csv);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── AU-19: WFH approval by manager ──
+router.post("/attendance/wfh/:id/approve", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res): Promise<void> => {
+  try {
+    const recordId = req.params.id as string;
+    const { approved } = req.body as { approved: boolean };
+    const [record] = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, recordId));
+    if (!record) { res.status(404).json({ error: "Record not found" }); return; }
+    if (record.type !== "wfh_pending") { res.status(400).json({ error: "Record is not pending WFH approval" }); return; }
+
+    if (approved) {
+      await db.update(attendanceRecordsTable).set({ type: "wfh" }).where(eq(attendanceRecordsTable.id, recordId));
+    } else {
+      await db.delete(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, recordId));
+    }
+
+    const [updated] = approved
+      ? await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, recordId))
+      : [null];
+    res.json({ approved, record: updated });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

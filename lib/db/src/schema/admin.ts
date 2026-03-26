@@ -1,59 +1,68 @@
-import { pgTable, text, timestamp, boolean, integer, numeric } from "drizzle-orm/pg-core";
+import { mysqlTable, varchar, text, timestamp, boolean, int } from "drizzle-orm/mysql-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const departmentsTable = pgTable("departments", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  name: text("name").notNull().unique(),
-  headId: text("head_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+export const departmentsTable = mysqlTable("departments", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: varchar("name", { length: 255 }).notNull().unique(),
+  headId: varchar("head_id", { length: 36 }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
 export type Department = typeof departmentsTable.$inferSelect;
 
-export const designationsTable = pgTable("designations", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  name: text("name").notNull(),
-  departmentId: text("department_id"),
-  level: integer("level"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+export const designationsTable = mysqlTable("designations", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: varchar("name", { length: 255 }).notNull(),
+  departmentId: varchar("department_id", { length: 36 }),
+  level: int("level"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
 export type Designation = typeof designationsTable.$inferSelect;
 
-export const companyProfileTable = pgTable("company_profile", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  name: text("name").notNull(),
+export const companyProfileTable = mysqlTable("company_profile", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: varchar("name", { length: 255 }).notNull(),
   logoUrl: text("logo_url"),
   address: text("address"),
-  email: text("email"),
-  phone: text("phone"),
-  website: text("website"),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  email: varchar("email", { length: 255 }),
+  phone: varchar("phone", { length: 30 }),
+  website: varchar("website", { length: 255 }),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
 export type CompanyProfile = typeof companyProfileTable.$inferSelect;
 
-export const notificationSettingsTable = pgTable("notification_settings", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  eventType: text("event_type").notNull().unique(),
-  label: text("label").notNull(),
+export const notificationSettingsTable = mysqlTable("notification_settings", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  eventType: varchar("event_type", { length: 100 }).notNull().unique(),
+  label: varchar("label", { length: 255 }).notNull(),
   isEnabled: boolean("is_enabled").notNull().default(true),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
 export type NotificationSetting = typeof notificationSettingsTable.$inferSelect;
 
-export const financialYearConfigTable = pgTable("financial_year_config", {
-  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
-  startMonth: integer("start_month").notNull().default(4),
-  startDay: integer("start_day").notNull().default(1),
-  endMonth: integer("end_month").notNull().default(3),
-  endDay: integer("end_day").notNull().default(31),
-  currentYear: text("current_year").notNull().default("2025-26"),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+export const financialYearConfigTable = mysqlTable("financial_year_config", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  startMonth: int("start_month").notNull().default(4),
+  startDay: int("start_day").notNull().default(1),
+  endMonth: int("end_month").notNull().default(3),
+  endDay: int("end_day").notNull().default(31),
+  currentYear: varchar("current_year", { length: 20 }).notNull().default("2025-26"),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });
 
 export type FinancialYearConfig = typeof financialYearConfigTable.$inferSelect;
+
+export const appConfigTable = mysqlTable("app_config", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  key: varchar("key", { length: 100 }).notNull().unique(),
+  value: text("value").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export type AppConfig = typeof appConfigTable.$inferSelect;

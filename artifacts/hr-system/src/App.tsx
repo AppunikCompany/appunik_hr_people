@@ -1,6 +1,9 @@
+import { useEffect } from "react";
 import { Switch, Route, Router as WouterRouter } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ClerkProvider, SignIn, SignedIn, SignedOut, useAuth } from "@clerk/clerk-react";
 import { Toaster } from "sonner";
+import { setGetTokenFn } from "@/lib/auth-token";
 import { Layout } from "@/components/Layout";
 import Dashboard from "@/pages/Dashboard";
 import Employees from "@/pages/Employees";
@@ -15,6 +18,8 @@ import Automations from "@/pages/Automations";
 import Settings from "@/pages/Settings";
 import SelfService from "@/pages/SelfService";
 
+const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -23,6 +28,18 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+/**
+ * Bridges Clerk's getToken into the standalone fetchApi function
+ * so API calls automatically include the Bearer token.
+ */
+function AuthTokenBridge() {
+  const { getToken } = useAuth();
+  useEffect(() => {
+    setGetTokenFn(getToken);
+  }, [getToken]);
+  return null;
+}
 
 function NotFound() {
   return (
@@ -74,13 +91,39 @@ function Router() {
 }
 
 function App() {
+  // Dev-friendly mode: allow running without Clerk keys.
+  // Backend supports dev auth bypass (hr_admin) when NODE_ENV !== "production".
+  if (!CLERK_PUBLISHABLE_KEY) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <div className="p-4 border-b border-border bg-muted text-sm text-muted-foreground">
+            Running without Clerk auth. Set <code className="font-mono">VITE_CLERK_PUBLISHABLE_KEY</code> to enable login.
+          </div>
+          <Router />
+        </WouterRouter>
+        <Toaster richColors position="top-right" />
+      </QueryClientProvider>
+    );
+  }
+
   return (
-    <QueryClientProvider client={queryClient}>
-      <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-        <Router />
-      </WouterRouter>
-      <Toaster richColors position="top-right" />
-    </QueryClientProvider>
+    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY}>
+      <QueryClientProvider client={queryClient}>
+        <AuthTokenBridge />
+        <SignedIn>
+          <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+            <Router />
+          </WouterRouter>
+        </SignedIn>
+        <SignedOut>
+          <div className="flex items-center justify-center min-h-screen bg-background">
+            <SignIn routing="hash" />
+          </div>
+        </SignedOut>
+        <Toaster richColors position="top-right" />
+      </QueryClientProvider>
+    </ClerkProvider>
   );
 }
 

@@ -9,6 +9,7 @@ import {
   leavePoliciesTable,
   leaveTypesTable,
   employeesTable,
+  usersTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
@@ -36,7 +37,9 @@ router.get("/admin/departments", requireAuth, requireRole("super_admin", "hr_adm
 
 router.post("/admin/departments", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [dept] = await db.insert(departmentsTable).values(req.body).returning();
+    const deptId = crypto.randomUUID();
+    await db.insert(departmentsTable).values({ ...req.body, id: deptId });
+    const [dept] = await db.select().from(departmentsTable).where(eq(departmentsTable.id, deptId));
     res.status(201).json({ ...dept, headName: null });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -45,7 +48,8 @@ router.post("/admin/departments", requireAuth, requireRole("super_admin", "hr_ad
 
 router.patch("/admin/departments/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [dept] = await db.update(departmentsTable).set(req.body).where(eq(departmentsTable.id, (req.params.id as string))).returning();
+    await db.update(departmentsTable).set(req.body).where(eq(departmentsTable.id, (req.params.id as string)));
+    const [dept] = await db.select().from(departmentsTable).where(eq(departmentsTable.id, (req.params.id as string)));
     if (!dept) { res.status(404).json({ error: "Not found" }); return; }
     res.json({ ...dept, headName: null });
   } catch (e) {
@@ -79,7 +83,9 @@ router.get("/admin/designations", requireAuth, requireRole("super_admin", "hr_ad
 
 router.post("/admin/designations", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [desig] = await db.insert(designationsTable).values(req.body).returning();
+    const desigId = crypto.randomUUID();
+    await db.insert(designationsTable).values({ ...req.body, id: desigId });
+    const [desig] = await db.select().from(designationsTable).where(eq(designationsTable.id, desigId));
     res.status(201).json({ ...desig, departmentName: null });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -88,7 +94,8 @@ router.post("/admin/designations", requireAuth, requireRole("super_admin", "hr_a
 
 router.patch("/admin/designations/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [desig] = await db.update(designationsTable).set(req.body).where(eq(designationsTable.id, (req.params.id as string))).returning();
+    await db.update(designationsTable).set(req.body).where(eq(designationsTable.id, (req.params.id as string)));
+    const [desig] = await db.select().from(designationsTable).where(eq(designationsTable.id, (req.params.id as string)));
     if (!desig) { res.status(404).json({ error: "Not found" }); return; }
     res.json({ ...desig, departmentName: null });
   } catch (e) {
@@ -109,10 +116,9 @@ router.get("/admin/company-profile", requireAuth, requireRole("super_admin", "hr
   try {
     const [profile] = await db.select().from(companyProfileTable);
     if (!profile) {
-      const [created] = await db
-        .insert(companyProfileTable)
-        .values({ name: "My Company" })
-        .returning();
+      const cpId = crypto.randomUUID();
+      await db.insert(companyProfileTable).values({ id: cpId, name: "My Company" });
+      const [created] = await db.select().from(companyProfileTable).where(eq(companyProfileTable.id, cpId));
       res.json(created);
       return;
     }
@@ -126,15 +132,14 @@ router.patch("/admin/company-profile", requireAuth, requireRole("super_admin", "
   try {
     const [existing] = await db.select().from(companyProfileTable);
     if (!existing) {
-      const [created] = await db.insert(companyProfileTable).values(req.body).returning();
+      const newCpId = crypto.randomUUID();
+      await db.insert(companyProfileTable).values({ ...req.body, id: newCpId });
+      const [created] = await db.select().from(companyProfileTable).where(eq(companyProfileTable.id, newCpId));
       res.json(created);
       return;
     }
-    const [updated] = await db
-      .update(companyProfileTable)
-      .set(req.body)
-      .where(eq(companyProfileTable.id, existing.id))
-      .returning();
+    await db.update(companyProfileTable).set(req.body).where(eq(companyProfileTable.id, existing.id));
+    const [updated] = await db.select().from(companyProfileTable).where(eq(companyProfileTable.id, existing.id));
     res.json(updated);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -158,7 +163,9 @@ router.get("/admin/leave-policies", requireAuth, requireRole("super_admin", "hr_
 
 router.post("/admin/leave-policies", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [policy] = await db.insert(leavePoliciesTable).values(req.body).returning();
+    const policyId = crypto.randomUUID();
+    await db.insert(leavePoliciesTable).values({ ...req.body, id: policyId });
+    const [policy] = await db.select().from(leavePoliciesTable).where(eq(leavePoliciesTable.id, policyId));
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, policy.leaveTypeId));
     res.status(201).json({ ...policy, leaveTypeName: lt?.name ?? "" });
   } catch (e) {
@@ -168,7 +175,8 @@ router.post("/admin/leave-policies", requireAuth, requireRole("super_admin", "hr
 
 router.patch("/admin/leave-policies/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [policy] = await db.update(leavePoliciesTable).set(req.body).where(eq(leavePoliciesTable.id, (req.params.id as string))).returning();
+    await db.update(leavePoliciesTable).set(req.body).where(eq(leavePoliciesTable.id, (req.params.id as string)));
+    const [policy] = await db.select().from(leavePoliciesTable).where(eq(leavePoliciesTable.id, (req.params.id as string)));
     if (!policy) { res.status(404).json({ error: "Not found" }); return; }
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, policy.leaveTypeId));
     res.json({ ...policy, leaveTypeName: lt?.name ?? "" });
@@ -189,11 +197,8 @@ router.get("/admin/notification-settings", requireAuth, requireRole("super_admin
 router.patch("/admin/notification-settings", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const { eventType, isEnabled } = req.body as { eventType: string; isEnabled: boolean };
-    const [setting] = await db
-      .update(notificationSettingsTable)
-      .set({ isEnabled })
-      .where(eq(notificationSettingsTable.eventType, eventType))
-      .returning();
+    await db.update(notificationSettingsTable).set({ isEnabled }).where(eq(notificationSettingsTable.eventType, eventType));
+    const [setting] = await db.select().from(notificationSettingsTable).where(eq(notificationSettingsTable.eventType, eventType));
     if (!setting) { res.status(404).json({ error: "Not found" }); return; }
     res.json(setting);
   } catch (e) {
@@ -205,10 +210,9 @@ router.get("/admin/financial-year", requireAuth, requireRole("super_admin", "hr_
   try {
     const [config] = await db.select().from(financialYearConfigTable);
     if (!config) {
-      const [created] = await db
-        .insert(financialYearConfigTable)
-        .values({ startMonth: 4, startDay: 1, endMonth: 3, endDay: 31, currentYear: "2025-26" })
-        .returning();
+      const fyId = crypto.randomUUID();
+      await db.insert(financialYearConfigTable).values({ id: fyId, startMonth: 4, startDay: 1, endMonth: 3, endDay: 31, currentYear: "2025-26" });
+      const [created] = await db.select().from(financialYearConfigTable).where(eq(financialYearConfigTable.id, fyId));
       res.json(created);
       return;
     }
@@ -222,16 +226,60 @@ router.patch("/admin/financial-year", requireAuth, requireRole("super_admin", "h
   try {
     const [existing] = await db.select().from(financialYearConfigTable);
     if (!existing) {
-      const [created] = await db.insert(financialYearConfigTable).values(req.body).returning();
+      const newFyId = crypto.randomUUID();
+      await db.insert(financialYearConfigTable).values({ ...req.body, id: newFyId });
+      const [created] = await db.select().from(financialYearConfigTable).where(eq(financialYearConfigTable.id, newFyId));
       res.json(created);
       return;
     }
-    const [updated] = await db
-      .update(financialYearConfigTable)
-      .set(req.body)
-      .where(eq(financialYearConfigTable.id, existing.id))
-      .returning();
+    await db.update(financialYearConfigTable).set(req.body).where(eq(financialYearConfigTable.id, existing.id));
+    const [updated] = await db.select().from(financialYearConfigTable).where(eq(financialYearConfigTable.id, existing.id));
     res.json(updated);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── AD-06: Role & Permission Management ──
+router.get("/admin/users", requireAuth, requireRole("super_admin"), async (_req, res) => {
+  try {
+    const users = await db.select().from(usersTable);
+    // Enrich with employee link if exists
+    const employees = await db.select().from(employeesTable);
+    const empByUserId = new Map(employees.filter((e) => e.userId).map((e) => [e.userId, e]));
+
+    const result = users.map((u) => {
+      const emp = empByUserId.get(u.id);
+      return {
+        id: u.id,
+        email: u.email,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        role: u.role,
+        employeeId: emp?.id ?? null,
+        employeeCode: emp?.employeeCode ?? null,
+        createdAt: u.createdAt,
+      };
+    });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.patch("/admin/users/:id/role", requireAuth, requireRole("super_admin"), async (req, res): Promise<void> => {
+  try {
+    const userId = req.params.id as string;
+    const { role } = req.body as { role: string };
+    const validRoles = ["super_admin", "hr_admin", "it_admin", "manager", "employee"];
+    if (!validRoles.includes(role)) {
+      res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
+      return;
+    }
+    await db.update(usersTable).set({ role: role as any }).where(eq(usersTable.id, userId));
+    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    res.json(user);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

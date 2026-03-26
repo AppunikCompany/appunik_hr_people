@@ -1,14 +1,7 @@
-import * as oidc from "openid-client";
+import { getAuth } from "@clerk/express";
 import { type Request, type Response, type NextFunction } from "express";
 import type { AuthUser, UserRole } from "@workspace/api-zod";
-import {
-  clearSession,
-  getOidcConfig,
-  getSessionId,
-  getSession,
-  updateSession,
-  type SessionData,
-} from "../lib/auth";
+import { resolveClerkUser } from "../lib/auth";
 
 declare global {
   namespace Express {
@@ -26,67 +19,34 @@ declare global {
   }
 }
 
-async function refreshIfExpired(
-  sid: string,
-  session: SessionData,
-): Promise<SessionData | null> {
-  const now = Math.floor(Date.now() / 1000);
-  if (!session.expires_at || now <= session.expires_at) return session;
+const BYPASS_AUTH = process.env.NODE_ENV !== "production";
 
-  if (!session.refresh_token) return null;
-
-  try {
-    const config = await getOidcConfig();
-    const tokens = await oidc.refreshTokenGrant(
-      config,
-      session.refresh_token,
-    );
-    session.access_token = tokens.access_token;
-    session.refresh_token = tokens.refresh_token ?? session.refresh_token;
-    session.expires_at = tokens.expiresIn()
-      ? now + tokens.expiresIn()!
-      : session.expires_at;
-    await updateSession(sid, session);
-    return session;
-  } catch {
-    return null;
-  }
-}
-
-export async function authMiddleware(
+/**
+ * Middleware that resolves the Clerk session into a local DB user on req.user.
+ * Must run AFTER clerkMiddleware() in the middleware chain.
+ */
+export async function resolveUserMiddleware(
   req: Request,
-  res: Response,
+  _res: Response,
   next: NextFunction,
 ): Promise<void> {
   req.isAuthenticated = function (this: Request) {
     return this.user != null;
   } as Request["isAuthenticated"];
 
-  const sid = getSessionId(req);
-  if (!sid) {
+  const { userId } = getAuth(req);
+  if (!userId) {
     next();
     return;
   }
 
-  const session = await getSession(sid);
-  if (!session?.user?.id) {
-    await clearSession(res, sid);
-    next();
-    return;
+  const user = await resolveClerkUser(userId);
+  if (user) {
+    req.user = user;
   }
 
-  const refreshed = await refreshIfExpired(sid, session);
-  if (!refreshed) {
-    await clearSession(res, sid);
-    next();
-    return;
-  }
-
-  req.user = refreshed.user;
   next();
 }
-
-const BYPASS_AUTH = process.env.NODE_ENV !== "production";
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (BYPASS_AUTH && !req.isAuthenticated()) {

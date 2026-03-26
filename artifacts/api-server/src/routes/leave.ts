@@ -26,7 +26,9 @@ router.get("/leave/types", requireAuth, async (_req, res) => {
 
 router.post("/leave/types", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const [type] = await db.insert(leaveTypesTable).values(req.body).returning();
+    const ltId = crypto.randomUUID();
+    await db.insert(leaveTypesTable).values({ ...req.body, id: ltId });
+    const [type] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, ltId));
     res.status(201).json(type);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -113,22 +115,57 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
 
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
+    const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, leaveTypeId));
+
+    // ── LV-09: Enforce leave policy rules ──
+    const [policy] = await db.select().from(leavePoliciesTable).where(eq(leavePoliciesTable.leaveTypeId, leaveTypeId));
+    if (policy) {
+      // No leave during probation
+      if (policy.noLeaveInProbation && emp?.probationEndDate) {
+        const probEnd = new Date(emp.probationEndDate);
+        if (new Date() < probEnd) {
+          res.status(400).json({ error: `${lt?.name ?? "This leave type"} cannot be taken during probation period` });
+          return;
+        }
+      }
+      // Minimum notice days
+      if (policy.minNoticeDays && policy.minNoticeDays > 0) {
+        const daysUntilStart = Math.ceil((new Date(startDate).getTime() - Date.now()) / 86400000);
+        if (daysUntilStart < policy.minNoticeDays) {
+          res.status(400).json({ error: `${lt?.name ?? "This leave type"} requires at least ${policy.minNoticeDays} days advance notice` });
+          return;
+        }
+      }
+      // Max consecutive days
+      if (policy.maxConsecutiveDays) {
+        const days = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1;
+        if (days > policy.maxConsecutiveDays) {
+          res.status(400).json({ error: `${lt?.name ?? "This leave type"} allows max ${policy.maxConsecutiveDays} consecutive days` });
+          return;
+        }
+      }
+    }
+
     const start = new Date(startDate);
     const end = new Date(endDate);
     const days = Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1;
 
-    const [request] = await db
-      .insert(leaveRequestsTable)
-      .values({ employeeId, leaveTypeId, startDate, endDate, days, reason })
-      .returning();
+    // ── LV-05: Auto-detect LOP when balance is exhausted ──
+    const year = new Date().getFullYear();
+    const [bal] = await db.select().from(leaveBalancesTable)
+      .where(and(eq(leaveBalancesTable.employeeId, employeeId), eq(leaveBalancesTable.leaveTypeId, leaveTypeId), eq(leaveBalancesTable.year, year)));
+    const isLop = !bal || (bal.balance - bal.used) < days;
+    const effectiveStatus = isLop ? "lop" : "pending";
 
-    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
-    const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, leaveTypeId));
+    const lrId = crypto.randomUUID();
+    await db.insert(leaveRequestsTable).values({ id: lrId, employeeId, leaveTypeId, startDate, endDate, days, reason, status: effectiveStatus });
+    const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, lrId));
 
     fireAutomationEvent({
       event: "leave.applied",
       employeeId,
-      variables: { leaveType: lt?.name ?? "", startDate, endDate, days: String(days), reason },
+      variables: { leaveType: lt?.name ?? "", startDate, endDate, days: String(days), reason, isLop: String(isLop) },
     }).catch(console.error);
 
     res.status(201).json({
@@ -136,6 +173,7 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
       employeeName: emp ? `${emp.firstName} ${emp.lastName}` : "",
       leaveTypeName: lt?.name ?? "",
       approvedByName: null,
+      isLop,
     });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -145,11 +183,8 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
 router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
     const { comment } = req.body as { comment?: string };
-    const [request] = await db
-      .update(leaveRequestsTable)
-      .set({ status: "approved", managerComment: comment })
-      .where(eq(leaveRequestsTable.id, (req.params.id as string)))
-      .returning();
+    await db.update(leaveRequestsTable).set({ status: "approved", managerComment: comment }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
 
     if (!request) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -202,11 +237,8 @@ router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin
 router.post("/leave/requests/:id/reject", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
     const { comment } = req.body as { comment?: string };
-    const [request] = await db
-      .update(leaveRequestsTable)
-      .set({ status: "rejected", managerComment: comment })
-      .where(eq(leaveRequestsTable.id, (req.params.id as string)))
-      .returning();
+    await db.update(leaveRequestsTable).set({ status: "rejected", managerComment: comment }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
 
     if (!request) { res.status(404).json({ error: "Not found" }); return; }
 
@@ -243,7 +275,9 @@ router.get("/leave/compoff", requireAuth, async (req, res) => {
 
 router.post("/leave/compoff", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
-    const [compoff] = await db.insert(compoffsTable).values(req.body).returning();
+    const coId = crypto.randomUUID();
+    await db.insert(compoffsTable).values({ ...req.body, id: coId });
+    const [compoff] = await db.select().from(compoffsTable).where(eq(compoffsTable.id, coId));
     res.status(201).json(compoff);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -282,6 +316,40 @@ router.get("/leave/calendar", requireAuth, async (req, res) => {
       }));
 
     res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── BI-04: Leave data bulk export as CSV ──
+router.get("/leave/export", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const year = parseInt((req.query.year as string) ?? String(new Date().getFullYear()));
+    const employees = await db.select().from(employeesTable);
+    const empMap = new Map(employees.map((e) => [e.id, e]));
+    const types = await db.select().from(leaveTypesTable);
+    const typeMap = new Map(types.map((t) => [t.id, t.name]));
+
+    const balances = await db.select().from(leaveBalancesTable);
+    const yearBalances = balances.filter((b) => b.year === year);
+
+    const headers = ["Employee Code", "Name", "Leave Type", "Allocated", "Used", "Balance"];
+    const rows = yearBalances.map((b) => {
+      const emp = empMap.get(b.employeeId);
+      return [
+        emp?.employeeCode ?? "",
+        emp ? `${emp.firstName} ${emp.lastName}` : "",
+        typeMap.get(b.leaveTypeId) ?? "",
+        b.balance + b.used,
+        b.used,
+        b.balance,
+      ].map((v) => `"${String(v).replace(/"/g, '""')}"`);
+    });
+
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename=leave_balances_${year}.csv`);
+    res.send(csv);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

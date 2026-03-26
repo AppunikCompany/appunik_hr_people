@@ -11,6 +11,9 @@ import reportsRouter from "./reports";
 import adminRouter from "./admin";
 import automationsRouter from "./automations";
 import selfServiceRouter from "./selfservice";
+import importsRouter from "./imports";
+import reimbursementsRouter from "./reimbursements";
+import investmentsRouter from "./investments";
 
 const router: IRouter = Router();
 
@@ -26,5 +29,8 @@ router.use(reportsRouter);
 router.use(adminRouter);
 router.use(automationsRouter);
 router.use(selfServiceRouter);
+router.use(importsRouter);
+router.use(reimbursementsRouter);
+router.use(investmentsRouter);
 
 export default router;

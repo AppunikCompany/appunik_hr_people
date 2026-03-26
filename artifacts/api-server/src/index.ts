@@ -1,6 +1,27 @@
-import app from "./app";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname } from "node:path";
+import { config as loadDotEnv } from "dotenv";
 
-const rawPort = process.env["PORT"];
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Load env as early as possible (before any DB imports).
+for (const envPath of [
+  resolve(__dirname, "../.env"), // artifacts/api-server/.env
+  resolve(__dirname, "../../..", ".env"), // repo root .env
+]) {
+  if (existsSync(envPath)) {
+    loadDotEnv({ path: envPath });
+    break;
+  }
+}
+
+const { default: app } = await import("./app");
+
+const rawPort =
+  process.env["PORT"] ??
+  (process.env.NODE_ENV === "development" ? "3001" : undefined);
 
 if (!rawPort) {
   throw new Error(
