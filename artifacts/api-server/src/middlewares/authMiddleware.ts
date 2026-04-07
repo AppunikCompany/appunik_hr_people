@@ -1,6 +1,6 @@
 import { getAuth } from "@clerk/express";
 import { type Request, type Response, type NextFunction } from "express";
-import type { AuthUser, UserRole } from "@workspace/api-zod";
+import type { AuthUser } from "@workspace/api-zod";
 import { resolveClerkUser } from "../lib/auth";
 
 declare global {
@@ -50,7 +50,7 @@ export async function resolveUserMiddleware(
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (BYPASS_AUTH && !req.isAuthenticated()) {
-    req.user = { id: "dev-user", role: "hr_admin" };
+    req.user = { id: "dev-user", role: "hr_admin", permissions: {} };
   }
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Authentication required" });
@@ -59,18 +59,41 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
   next();
 }
 
-export function requireRole(...roles: UserRole[]) {
+export function requireRole(...roles: string[]) {
   return (req: Request, res: Response, next: NextFunction): void => {
     if (BYPASS_AUTH && !req.isAuthenticated()) {
-      req.user = { id: "dev-user", role: "hr_admin" };
+      req.user = { id: "dev-user", role: "hr_admin", permissions: {} };
     }
     if (!req.isAuthenticated()) {
       res.status(401).json({ error: "Authentication required" });
       return;
     }
     const userRole = req.user.role ?? "employee";
-    if (!roles.includes(userRole as UserRole)) {
+    if (!roles.includes(userRole)) {
       res.status(403).json({ error: "Insufficient permissions" });
+      return;
+    }
+    next();
+  };
+}
+
+export function requirePermission(module: string, action: "view" | "create" | "edit" | "delete") {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (BYPASS_AUTH && !req.isAuthenticated()) {
+      req.user = { id: "dev-user", role: "hr_admin", permissions: {} };
+    }
+    if (!req.isAuthenticated()) {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+    // super_admin always has full access
+    if (req.user.role === "super_admin") {
+      next();
+      return;
+    }
+    const perm = req.user.permissions?.[module];
+    if (!perm || !perm[action]) {
+      res.status(403).json({ error: `Permission denied: ${action} on ${module}` });
       return;
     }
     next();

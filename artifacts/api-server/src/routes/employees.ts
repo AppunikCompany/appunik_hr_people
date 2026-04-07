@@ -230,6 +230,29 @@ router.post("/employees/import", requireAuth, requireRole("super_admin", "hr_adm
 
 router.post("/employees", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
+    const { firstName, lastName, email, reportingManagerId } = req.body as {
+      firstName?: string; lastName?: string; email?: string; reportingManagerId?: string;
+    };
+
+    if (!firstName || !lastName || !email) {
+      res.status(400).json({ error: "First Name, Last Name, and Email are required" });
+      return;
+    }
+
+    const [existingEmail] = await db.select({ id: employeesTable.id }).from(employeesTable).where(eq(employeesTable.email, email));
+    if (existingEmail) {
+      res.status(409).json({ error: "An employee with this email already exists" });
+      return;
+    }
+
+    if (reportingManagerId) {
+      const [manager] = await db.select({ id: employeesTable.id }).from(employeesTable).where(eq(employeesTable.id, reportingManagerId));
+      if (!manager) {
+        res.status(400).json({ error: "Reporting manager not found" });
+        return;
+      }
+    }
+
     const code = await nextEmployeeCode();
     const newEmpId = crypto.randomUUID();
     await db.insert(employeesTable).values({ ...req.body, id: newEmpId, employeeCode: code });

@@ -69,6 +69,7 @@ router.post("/onboarding/checklists", requireAuth, requireRole("super_admin", "h
     if (tasks && tasks.length > 0) {
       await db.insert(onboardingTasksTable).values(
         tasks.map((t) => ({
+          id: crypto.randomUUID(),
           checklistId: checklist.id,
           title: t.title,
           assignedTo: t.assignedTo,

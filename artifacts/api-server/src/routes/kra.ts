@@ -7,7 +7,7 @@ import {
   employeesTable,
   importLogsTable,
 } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
 import { PRIVILEGED_ROLES, resolveEmployeeId } from "../lib/ownership";
@@ -101,6 +101,27 @@ router.get("/kra/assignments", requireAuth, async (req, res): Promise<void> => {
 
 router.post("/kra/assignments", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
+    const { employeeId, cycleId, weightage } = req.body as { employeeId: string; cycleId: string; weightage: number };
+
+    if (!employeeId || !cycleId) {
+      res.status(400).json({ error: "employeeId and cycleId are required" });
+      return;
+    }
+    if (typeof weightage !== "number" || weightage <= 0 || weightage > 100) {
+      res.status(400).json({ error: "weightage must be between 1 and 100" });
+      return;
+    }
+
+    const empCycleAssignments = await db
+      .select({ weightage: kraAssignmentsTable.weightage })
+      .from(kraAssignmentsTable)
+      .where(and(eq(kraAssignmentsTable.employeeId, employeeId), eq(kraAssignmentsTable.cycleId, cycleId)));
+    const usedWeightage = empCycleAssignments.reduce((sum, a) => sum + (a.weightage ?? 0), 0);
+    if (usedWeightage + weightage > 100) {
+      res.status(400).json({ error: `Total weightage would exceed 100%. Already used: ${usedWeightage}%, available: ${100 - usedWeightage}%` });
+      return;
+    }
+
     const kraId = crypto.randomUUID();
     await db.insert(kraAssignmentsTable).values({ ...req.body, id: kraId });
     const [assignment] = await db.select().from(kraAssignmentsTable).where(eq(kraAssignmentsTable.id, kraId));
@@ -182,7 +203,16 @@ router.post("/kra/assignments/import", requireAuth, requireRole("super_admin", "
         if (!cycleId) { results.push({ row: i + 1, status: "error", error: `Review cycle "${cycleName}" not found` }); errors++; continue; }
 
         if (isNaN(weightage) || weightage <= 0 || weightage > 100) {
-          results.push({ row: i + 1, status: "error", error: "Weightage must be between 0 and 100" }); errors++; continue;
+          results.push({ row: i + 1, status: "error", error: "Weightage must be between 1 and 100" }); errors++; continue;
+        }
+
+        const empCycleRows = await db
+          .select({ weightage: kraAssignmentsTable.weightage })
+          .from(kraAssignmentsTable)
+          .where(and(eq(kraAssignmentsTable.employeeId, employeeId), eq(kraAssignmentsTable.cycleId, cycleId)));
+        const usedWeightage = empCycleRows.reduce((sum, a) => sum + (a.weightage ?? 0), 0);
+        if (usedWeightage + weightage > 100) {
+          results.push({ row: i + 1, status: "error", error: `Total weightage would exceed 100% (used: ${usedWeightage}%)` }); errors++; continue;
         }
 
         const kraId = crypto.randomUUID();

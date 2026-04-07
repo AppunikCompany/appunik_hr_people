@@ -42,7 +42,10 @@ export type AutomationEvent =
   | "kra.assigned"
   | "kra.self_assessed"
   | "kra.completed"
-  | "kra.deadline_approaching";
+  | "kra.deadline_approaching"
+  | "attendance.wfh_requested"
+  | "employee.document_expiry"
+  | "holiday.announcement";
 
 interface FireEventOptions {
   event: AutomationEvent;

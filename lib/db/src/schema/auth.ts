@@ -18,7 +18,7 @@ export const usersTable = mysqlTable("users", {
   firstName: varchar("first_name", { length: 100 }),
   lastName: varchar("last_name", { length: 100 }),
   profileImageUrl: varchar("profile_image_url", { length: 500 }),
-  role: varchar("role", { length: 20, enum: ["super_admin", "hr_admin", "it_admin", "manager", "employee"] }).notNull().default("employee"),
+  role: varchar("role", { length: 50 }).notNull().default("employee"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });

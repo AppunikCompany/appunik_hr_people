@@ -2,8 +2,15 @@ import express, { type Express } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import { clerkMiddleware } from "@clerk/express";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 import router from "./routes";
 import { resolveUserMiddleware } from "./middlewares/authMiddleware";
+import { seedSystemRoles } from "./lib/seedRoles";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const app: Express = express();
 
@@ -21,6 +28,19 @@ if (hasClerkKeys) {
 // Resolve Clerk userId into our local DB user record on req.user
 app.use(resolveUserMiddleware);
 
+// Seed system roles and default permissions on startup
+seedSystemRoles().catch((err) => console.error("[seed] Failed to seed roles:", err));
+
 app.use("/api", router);
+
+// Serve built React frontend (run `pnpm build:frontend` first)
+const frontendDist = resolve(__dirname, "../../hr-system/dist/public");
+if (existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get(/^(?!\/api)/, (_req, res) => {
+    res.sendFile("index.html", { root: frontendDist });
+  });
+  console.log(`Serving frontend from: ${frontendDist}`);
+}
 
 export default app;

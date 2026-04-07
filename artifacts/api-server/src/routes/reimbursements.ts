@@ -19,6 +19,19 @@ router.post("/reimbursements", requireAuth, async (req: Request, res: Response):
       expenseDate: string;
     };
 
+    if (!category || !expenseDate) {
+      res.status(400).json({ error: "category and expenseDate are required" });
+      return;
+    }
+    if (typeof amount !== "number" || amount <= 0) {
+      res.status(400).json({ error: "amount must be a positive number" });
+      return;
+    }
+    if (amount > 500000) {
+      res.status(400).json({ error: "amount cannot exceed 500,000" });
+      return;
+    }
+
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useKraAssignments, useReviewCycles, useEmployees, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -91,12 +92,25 @@ function RateDialog({ assignment, open, onClose }: { assignment: any; open: bool
 }
 
 export default function Performance() {
+  const [location, navigate] = useLocation();
   const [cycleId, setCycleId] = useState("");
   const [createCycleOpen, setCreateCycleOpen] = useState(false);
   const [rateAssignment, setRateAssignment] = useState<any>(null);
   const { data: cycles } = useReviewCycles();
   const { data: assignments, isLoading } = useKraAssignments(cycleId ? { cycleId } : undefined);
   const qc = useQueryClient();
+
+  // URL-based tab
+  const activeTab =
+    location === "/performance/templates" ? "templates" :
+    location === "/performance/cycles" ? "cycles" :
+    "assignments";
+
+  const handleTabChange = (tab: string) => {
+    if (tab === "assignments") navigate("/performance");
+    else if (tab === "cycles") navigate("/performance/cycles");
+    else if (tab === "templates") navigate("/performance/templates");
+  };
 
   const closeCycle = useMutation({
     mutationFn: (id: string) => fetchApi(`/kra/review-cycles/${id}/close`, { method: "POST", body: JSON.stringify({}) }),
@@ -112,10 +126,11 @@ export default function Performance() {
         actions={<Button size="sm" onClick={() => setCreateCycleOpen(true)}><Plus className="w-4 h-4 mr-1" /> New Cycle</Button>}
       />
 
-      <Tabs defaultValue="assignments">
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="mb-6">
           <TabsTrigger value="assignments">KRA Assignments</TabsTrigger>
           <TabsTrigger value="cycles">Review Cycles</TabsTrigger>
+          <TabsTrigger value="templates">Templates</TabsTrigger>
         </TabsList>
 
         <TabsContent value="assignments">
@@ -203,6 +218,23 @@ export default function Performance() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="templates">
+          <div className="bg-white border border-border rounded-lg shadow-sm p-8 text-center">
+            <div className="max-w-sm mx-auto">
+              <div className="w-12 h-12 bg-secondary rounded-full flex items-center justify-center mx-auto mb-4">
+                <Star className="w-6 h-6 text-muted-foreground" />
+              </div>
+              <h3 className="text-sm font-semibold text-foreground mb-2">Performance Review Templates</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Review templates allow you to define standard questions and rating criteria for your performance cycles. Templates will be linked to Review Cycles during setup.
+              </p>
+              <p className="text-xs text-muted-foreground bg-secondary rounded-md px-3 py-2 inline-block">
+                Template management will be available in a future update.
+              </p>
             </div>
           </div>
         </TabsContent>

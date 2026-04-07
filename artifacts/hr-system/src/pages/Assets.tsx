@@ -25,7 +25,7 @@ function AddAssetDialog({ open, onClose }: { open: boolean; onClose: () => void 
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader><DialogTitle>Add Asset</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div><Label>Asset Name *</Label><Input value={form.name} onChange={e => set("name", e.target.value)} className="mt-1" /></div>
@@ -40,13 +40,22 @@ function AddAssetDialog({ open, onClose }: { open: boolean; onClose: () => void 
           </div>
           <div><Label>Serial Number</Label><Input value={form.serialNumber} onChange={e => set("serialNumber", e.target.value)} className="mt-1" /></div>
           <div className="grid grid-cols-2 gap-4">
-            <div><Label>Purchase Date</Label><Input type="date" value={form.purchaseDate} onChange={e => set("purchaseDate", e.target.value)} className="mt-1" /></div>
+            <div><Label>Purchase Date</Label><Input type="date" max="9999-12-31" value={form.purchaseDate} onChange={e => set("purchaseDate", e.target.value)} className="mt-1" /></div>
             <div><Label>Purchase Cost (₹)</Label><Input type="number" value={form.purchaseCost} onChange={e => set("purchaseCost", e.target.value)} className="mt-1" /></div>
           </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={mutation.isPending}>{mutation.isPending ? "Adding..." : "Add Asset"}</Button>
+          <Button
+            onClick={() => {
+              if (!form.name.trim()) { toast.error("Asset name is required"); return; }
+              if (!form.categoryId) { toast.error("Category is required"); return; }
+              mutation.mutate(form);
+            }}
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending ? "Adding..." : "Add Asset"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -65,7 +74,7 @@ function AssignAssetDialog({ assetId, open, onClose }: { assetId: string; open: 
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm" onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader><DialogTitle>Assign Asset</DialogTitle></DialogHeader>
         <div className="py-2">
           <Label>Assign To *</Label>
@@ -92,8 +101,7 @@ export default function Assets() {
   const [statusFilter, setStatusFilter] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [assignId, setAssignId] = useState<string | null>(null);
-  const { data: assets, isLoading } = useAssets(statusFilter ? { status: statusFilter } : undefined);
-  const { data: cats } = useAssetCategories();
+  const { data: assets, isLoading, isError } = useAssets(statusFilter ? { status: statusFilter } : undefined);
   const qc = useQueryClient();
 
   const returnAsset = useMutation({
@@ -147,7 +155,9 @@ export default function Assets() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
+                <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">Loading assets...</td></tr>
+              ) : isError ? (
+                <tr><td colSpan={7} className="text-center py-10 text-red-500">Failed to load assets. Please refresh.</td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">No assets found</td></tr>
               ) : filtered.map((asset: any, i: number) => (

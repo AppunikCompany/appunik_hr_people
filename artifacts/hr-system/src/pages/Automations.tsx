@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "wouter";
 import { useAutomationRules, useAutomationLogs, useEmailTemplates, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -25,7 +26,7 @@ function EditTemplateDialog({ template, open, onClose }: { template: any; open: 
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl" onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader><DialogTitle>Edit Email Template — {template?.name}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div><Label>Subject</Label><Input value={form.subject} onChange={e => setForm(f => ({ ...f, subject: e.target.value }))} className="mt-1" /></div>
@@ -41,11 +42,19 @@ function EditTemplateDialog({ template, open, onClose }: { template: any; open: 
 }
 
 export default function Automations() {
+  const [location] = useLocation();
   const [editTemplate, setEditTemplate] = useState<any>(null);
   const { data: rules, isLoading: rulesLoading } = useAutomationRules();
   const { data: logs, isLoading: logsLoading } = useAutomationLogs();
   const { data: templates } = useEmailTemplates();
   const qc = useQueryClient();
+
+  const tabFromPath: Record<string, string> = {
+    "/automations": "rules",
+    "/automations/templates": "templates",
+    "/automations/logs": "logs",
+  };
+  const activeTab = tabFromPath[location] ?? "rules";
 
   const toggleRule = useMutation({
     mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
@@ -58,16 +67,16 @@ export default function Automations() {
     <PageContainer>
       <PageHeader title="Automations" breadcrumbs={[{ label: "Automations" }]} subtitle="Manage email automation rules and templates" />
 
-      <Tabs defaultValue="rules">
+      <Tabs value={activeTab}>
         <TabsList className="mb-6">
-          <TabsTrigger value="rules">Rules ({rules?.length ?? 0})</TabsTrigger>
-          <TabsTrigger value="templates">Email Templates</TabsTrigger>
-          <TabsTrigger value="logs">Logs</TabsTrigger>
+          <TabsTrigger value="rules" asChild><a href="/automations">Rules ({rules?.length ?? 0})</a></TabsTrigger>
+          <TabsTrigger value="templates" asChild><a href="/automations/templates">Email Templates</a></TabsTrigger>
+          <TabsTrigger value="logs" asChild><a href="/automations/logs">Logs</a></TabsTrigger>
         </TabsList>
 
         <TabsContent value="rules">
           <div className="bg-white border border-border rounded-lg shadow-sm overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm min-w-[700px]">
               <thead>
                 <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
                   <th className="text-left px-5 py-3">Rule</th>
@@ -75,7 +84,7 @@ export default function Automations() {
                   <th className="text-left px-5 py-3">Template</th>
                   <th className="text-left px-5 py-3">Recipients</th>
                   <th className="text-left px-5 py-3">Last Run</th>
-                  <th className="text-left px-5 py-3">Active</th>
+                  <th className="text-left px-5 py-3 min-w-[80px]">Active</th>
                 </tr>
               </thead>
               <tbody>

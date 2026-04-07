@@ -10,6 +10,8 @@ import {
   leaveTypesTable,
   employeesTable,
   usersTable,
+  rolesTable,
+  rolePermissionsTable,
 } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
@@ -271,15 +273,102 @@ router.patch("/admin/users/:id/role", requireAuth, requireRole("super_admin"), a
   try {
     const userId = req.params.id as string;
     const { role } = req.body as { role: string };
-    const validRoles = ["super_admin", "hr_admin", "it_admin", "manager", "employee"];
-    if (!validRoles.includes(role)) {
-      res.status(400).json({ error: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
+    const allRoles = await db.select({ name: rolesTable.name }).from(rolesTable);
+    const validRoleNames = allRoles.map((r) => r.name);
+    if (!validRoleNames.includes(role)) {
+      res.status(400).json({ error: `Invalid role. Must be one of: ${validRoleNames.join(", ")}` });
       return;
     }
-    await db.update(usersTable).set({ role: role as any }).where(eq(usersTable.id, userId));
+    await db.update(usersTable).set({ role }).where(eq(usersTable.id, userId));
     const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
     if (!user) { res.status(404).json({ error: "User not found" }); return; }
     res.json(user);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Roles CRUD ──────────────────────────────────────────────────────────────
+
+router.get("/admin/roles", requireAuth, requireRole("super_admin"), async (_req, res) => {
+  try {
+    const roles = await db.select().from(rolesTable);
+    const perms = await db.select().from(rolePermissionsTable);
+    const result = roles.map((r) => ({
+      ...r,
+      permissions: perms.filter((p) => p.roleId === r.id),
+    }));
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.post("/admin/roles", requireAuth, requireRole("super_admin"), async (req, res) => {
+  try {
+    const { name, description, permissions } = req.body as {
+      name: string;
+      description?: string;
+      permissions?: Array<{ module: string; canView: boolean; canCreate: boolean; canEdit: boolean; canDelete: boolean }>;
+    };
+    const roleId = crypto.randomUUID();
+    await db.insert(rolesTable).values({ id: roleId, name, description, isSystem: false, isProtected: false });
+    if (permissions && Array.isArray(permissions)) {
+      for (const p of permissions) {
+        await db.insert(rolePermissionsTable).values({ id: crypto.randomUUID(), roleId, ...p });
+      }
+    }
+    const [role] = await db.select().from(rolesTable).where(eq(rolesTable.id, roleId));
+    const rolePerms = await db.select().from(rolePermissionsTable).where(eq(rolePermissionsTable.roleId, roleId));
+    res.status(201).json({ ...role, permissions: rolePerms });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.patch("/admin/roles/:id", requireAuth, requireRole("super_admin"), async (req, res): Promise<void> => {
+  try {
+    const roleId = req.params.id as string;
+    const [role] = await db.select().from(rolesTable).where(eq(rolesTable.id, roleId));
+    if (!role) { res.status(404).json({ error: "Role not found" }); return; }
+    if (role.isProtected) { res.status(403).json({ error: "Cannot modify protected role" }); return; }
+    const { name, description } = req.body as { name?: string; description?: string };
+    await db.update(rolesTable).set({ name, description }).where(eq(rolesTable.id, roleId));
+    const [updated] = await db.select().from(rolesTable).where(eq(rolesTable.id, roleId));
+    const rolePerms = await db.select().from(rolePermissionsTable).where(eq(rolePermissionsTable.roleId, roleId));
+    res.json({ ...updated, permissions: rolePerms });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.delete("/admin/roles/:id", requireAuth, requireRole("super_admin"), async (req, res): Promise<void> => {
+  try {
+    const roleId = req.params.id as string;
+    const [role] = await db.select().from(rolesTable).where(eq(rolesTable.id, roleId));
+    if (!role) { res.status(404).json({ error: "Role not found" }); return; }
+    if (role.isSystem) { res.status(403).json({ error: "Cannot delete system role" }); return; }
+    await db.delete(rolePermissionsTable).where(eq(rolePermissionsTable.roleId, roleId));
+    await db.delete(rolesTable).where(eq(rolesTable.id, roleId));
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.put("/admin/roles/:id/permissions", requireAuth, requireRole("super_admin"), async (req, res): Promise<void> => {
+  try {
+    const roleId = req.params.id as string;
+    const [role] = await db.select().from(rolesTable).where(eq(rolesTable.id, roleId));
+    if (!role) { res.status(404).json({ error: "Role not found" }); return; }
+    if (role.isProtected) { res.status(403).json({ error: "Cannot modify protected role permissions" }); return; }
+    const permissions = req.body as Array<{ module: string; canView: boolean; canCreate: boolean; canEdit: boolean; canDelete: boolean }>;
+    await db.delete(rolePermissionsTable).where(eq(rolePermissionsTable.roleId, roleId));
+    for (const p of permissions) {
+      await db.insert(rolePermissionsTable).values({ id: crypto.randomUUID(), roleId, ...p });
+    }
+    const rolePerms = await db.select().from(rolePermissionsTable).where(eq(rolePermissionsTable.roleId, roleId));
+    res.json(rolePerms);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

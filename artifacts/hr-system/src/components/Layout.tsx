@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useRoute } from "wouter";
 import { useClerk } from "@clerk/clerk-react";
 import { cn } from "@/lib/utils";
-import { useCurrentUser } from "@/hooks/useApi";
+import { useCurrentUser, useCompanyProfile } from "@/hooks/useApi";
 import {
   Users,
   Clock,
@@ -34,14 +34,16 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.ComponentType<{ className?: string }>;
+  module?: string;
   children?: { label: string; href: string }[];
 }
 
-const navItems: NavItem[] = [
+const ALL_NAV_ITEMS: NavItem[] = [
   {
     label: "Employees",
     href: "/employees",
     icon: Users,
+    module: "employees",
     children: [
       { label: "All Employees", href: "/employees" },
       { label: "Org Chart", href: "/employees/org-chart" },
@@ -51,6 +53,7 @@ const navItems: NavItem[] = [
     label: "Attendance",
     href: "/attendance",
     icon: Clock,
+    module: "attendance",
     children: [
       { label: "Daily View", href: "/attendance" },
       { label: "My Attendance", href: "/attendance/my" },
@@ -61,6 +64,7 @@ const navItems: NavItem[] = [
     label: "Leave",
     href: "/leave",
     icon: Calendar,
+    module: "leave",
     children: [
       { label: "Leave Requests", href: "/leave" },
       { label: "Leave Calendar", href: "/leave/calendar" },
@@ -72,16 +76,19 @@ const navItems: NavItem[] = [
     label: "Onboarding",
     href: "/onboarding",
     icon: UserPlus,
+    module: "onboarding",
   },
   {
     label: "Assets",
     href: "/assets",
     icon: Package,
+    module: "assets",
   },
   {
     label: "Performance",
     href: "/performance",
     icon: Target,
+    module: "performance",
     children: [
       { label: "KRA Assignments", href: "/performance" },
       { label: "Review Cycles", href: "/performance/cycles" },
@@ -92,6 +99,7 @@ const navItems: NavItem[] = [
     label: "Reports",
     href: "/reports",
     icon: BarChart3,
+    module: "reports",
     children: [
       { label: "Headcount", href: "/reports" },
       { label: "Attendance", href: "/reports/attendance" },
@@ -102,6 +110,7 @@ const navItems: NavItem[] = [
     label: "Automations",
     href: "/automations",
     icon: Zap,
+    module: "automations",
     children: [
       { label: "Rules", href: "/automations" },
       { label: "Email Templates", href: "/automations/templates" },
@@ -117,6 +126,7 @@ const navItems: NavItem[] = [
     label: "Settings",
     href: "/settings",
     icon: Settings,
+    module: "settings",
     children: [
       { label: "Company Profile", href: "/settings" },
       { label: "Departments", href: "/settings/departments" },
@@ -138,22 +148,24 @@ function NavItemRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) 
       <div>
         <button
           onClick={() => setOpen(!open)}
+          title={collapsed ? item.label : undefined}
           className={cn(
-            "w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors",
-            "hover:bg-secondary text-foreground",
-            active && "border-l-2 border-primary text-primary font-medium rounded-l-none pl-[calc(0.75rem-2px)]"
+            "w-full flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg transition-all duration-150",
+            active
+              ? "bg-foreground text-background font-medium"
+              : "text-muted-foreground hover:bg-secondary hover:text-foreground"
           )}
         >
-          <item.icon className={cn("w-4 h-4 flex-shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+          <item.icon className="w-4 h-4 flex-shrink-0" />
           {!collapsed && (
             <>
               <span className="flex-1 text-left">{item.label}</span>
-              <ChevronDown className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
+              <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-150", open && "rotate-180")} />
             </>
           )}
         </button>
         {!collapsed && open && (
-          <div className="ml-7 mt-1 space-y-0.5">
+          <div className="ml-3 mt-0.5 pl-4 border-l border-border space-y-0.5 py-0.5">
             {item.children.map((child) => (
               <NavChildItem key={child.href} item={child} />
             ))}
@@ -166,13 +178,15 @@ function NavItemRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) 
   return (
     <Link href={item.href}>
       <span
+        title={collapsed ? item.label : undefined}
         className={cn(
-          "flex items-center gap-3 px-3 py-2 text-sm rounded-md cursor-pointer transition-colors",
-          "hover:bg-secondary text-foreground",
-          active && "border-l-2 border-primary text-primary font-medium rounded-l-none pl-[calc(0.75rem-2px)]"
+          "flex items-center gap-2.5 px-3 py-2 text-sm rounded-lg cursor-pointer transition-all duration-150",
+          active
+            ? "bg-foreground text-background font-medium"
+            : "text-muted-foreground hover:bg-secondary hover:text-foreground"
         )}
       >
-        <item.icon className={cn("w-4 h-4 flex-shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+        <item.icon className="w-4 h-4 flex-shrink-0" />
         {!collapsed && <span>{item.label}</span>}
       </span>
     </Link>
@@ -185,9 +199,10 @@ function NavChildItem({ item }: { item: { label: string; href: string } }) {
     <Link href={item.href}>
       <span
         className={cn(
-          "flex items-center px-3 py-1.5 text-sm rounded-md cursor-pointer transition-colors",
-          "hover:bg-secondary text-muted-foreground hover:text-foreground",
-          isExact && "text-primary font-medium"
+          "flex items-center px-2 py-1.5 text-xs rounded-md cursor-pointer transition-colors",
+          isExact
+            ? "text-foreground font-semibold"
+            : "text-muted-foreground hover:text-foreground"
         )}
       >
         {item.label}
@@ -203,7 +218,23 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const { data: user } = useCurrentUser();
+  const { data: companyProfile } = useCompanyProfile();
   const { signOut } = useClerk();
+
+  const systemName = companyProfile?.name ? `${companyProfile.name}'s HR System` : "HR System";
+
+  useEffect(() => {
+    document.title = systemName;
+  }, [systemName]);
+
+  // Filter nav items based on user permissions
+  const navItems = ALL_NAV_ITEMS.filter((item) => {
+    if (!item.module) return true; // Self-Service has no module restriction
+    if (!user) return false;
+    if (user.role === "super_admin") return true;
+    const perm = user.permissions?.[item.module];
+    return perm?.view === true;
+  });
 
   const initials = [user?.firstName, user?.lastName]
     .filter(Boolean)
@@ -218,42 +249,64 @@ export function Layout({ children }: LayoutProps) {
       <aside
         className={cn(
           "flex flex-col bg-white border-r border-border transition-all duration-200 flex-shrink-0",
-          collapsed ? "w-14" : "w-56"
+          collapsed ? "w-[60px]" : "w-[220px]"
         )}
       >
-        <div className="flex items-center gap-3 px-4 py-4 border-b border-border h-14">
-          <Building2 className="w-6 h-6 text-primary flex-shrink-0" />
+        {/* Brand header */}
+        <div className={cn(
+          "flex items-center border-b border-border h-14 flex-shrink-0",
+          collapsed ? "px-3 justify-center" : "px-4 gap-2.5"
+        )}>
+          <div className="w-7 h-7 bg-foreground rounded-lg flex items-center justify-center flex-shrink-0">
+            <Building2 className="w-4 h-4 text-background" />
+          </div>
           {!collapsed && (
-            <span className="text-sm font-semibold text-foreground truncate">HR System</span>
+            <span className="text-[13px] font-semibold text-foreground truncate leading-tight flex-1">{systemName}</span>
           )}
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="ml-auto text-muted-foreground hover:text-foreground p-0.5"
-          >
-            {collapsed ? <Menu className="w-4 h-4" /> : <X className="w-4 h-4" />}
-          </button>
+          {!collapsed && (
+            <button
+              onClick={() => setCollapsed(true)}
+              className="text-muted-foreground hover:text-foreground p-0.5 flex-shrink-0"
+              title="Collapse sidebar"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
 
+        {/* Expand button when collapsed */}
+        {collapsed && (
+          <button
+            onClick={() => setCollapsed(false)}
+            className="flex items-center justify-center py-2 text-muted-foreground hover:text-foreground border-b border-border"
+            title="Expand sidebar"
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+        )}
+
+        {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
           {navItems.map((item) => (
             <NavItemRow key={item.href} item={item} collapsed={collapsed} />
           ))}
         </nav>
 
-        <div className="border-t border-border px-2 py-3">
+        {/* User footer */}
+        <div className="border-t border-border px-2 py-2.5">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className={cn(
-                "w-full flex items-center gap-2 px-2 py-2 rounded-md hover:bg-secondary transition-colors text-left",
+                "w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-secondary transition-colors text-left",
               )}>
                 <Avatar className="w-7 h-7 flex-shrink-0">
                   <AvatarImage src={user?.profileImageUrl ?? undefined} />
-                  <AvatarFallback className="text-xs bg-primary text-primary-foreground">{initials}</AvatarFallback>
+                  <AvatarFallback className="text-xs bg-foreground text-background font-semibold">{initials}</AvatarFallback>
                 </Avatar>
                 {!collapsed && (
                   <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-foreground truncate">{fullName}</p>
-                    <p className="text-xs text-muted-foreground truncate capitalize">{user?.role ?? "employee"}</p>
+                    <p className="text-xs font-semibold text-foreground truncate">{fullName}</p>
+                    <p className="text-[11px] text-muted-foreground truncate capitalize">{user?.role ?? "employee"}</p>
                   </div>
                 )}
               </button>

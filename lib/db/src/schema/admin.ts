@@ -66,3 +66,27 @@ export const appConfigTable = mysqlTable("app_config", {
 });
 
 export type AppConfig = typeof appConfigTable.$inferSelect;
+
+export const rolesTable = mysqlTable("roles", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  name: varchar("name", { length: 50 }).notNull().unique(),
+  description: varchar("description", { length: 255 }),
+  isSystem: boolean("is_system").notNull().default(false),
+  isProtected: boolean("is_protected").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export type Role = typeof rolesTable.$inferSelect;
+
+export const rolePermissionsTable = mysqlTable("role_permissions", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  roleId: varchar("role_id", { length: 36 }).notNull(),
+  module: varchar("module", { length: 50 }).notNull(),
+  canView: boolean("can_view").notNull().default(false),
+  canCreate: boolean("can_create").notNull().default(false),
+  canEdit: boolean("can_edit").notNull().default(false),
+  canDelete: boolean("can_delete").notNull().default(false),
+});
+
+export type RolePermission = typeof rolePermissionsTable.$inferSelect;

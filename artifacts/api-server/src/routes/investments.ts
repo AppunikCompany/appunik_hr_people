@@ -98,7 +98,20 @@ router.patch("/investment-declarations/:id", requireAuth, async (req: Request, r
     if (declaredAmount !== undefined) updates.declaredAmount = declaredAmount;
     if (proofUrl !== undefined) updates.proofUrl = proofUrl;
     if (notes !== undefined) updates.notes = notes;
-    if (status !== undefined && ["declared", "proof_submitted"].includes(String(status))) updates.status = status;
+    // Status can only move forward: declared → proof_submitted. Never backward.
+    if (status !== undefined) {
+      const allowedTransitions: Record<string, string[]> = {
+        declared: ["proof_submitted"],
+        proof_submitted: [],
+      };
+      const currentStatus = existing.status;
+      const allowed = allowedTransitions[currentStatus] ?? [];
+      if (!allowed.includes(String(status))) {
+        res.status(400).json({ error: `Cannot transition from '${currentStatus}' to '${status}'` });
+        return;
+      }
+      updates.status = String(status);
+    }
 
     await db.update(investmentDeclarationsTable).set(updates).where(eq(investmentDeclarationsTable.id, id));
     const [updated] = await db.select().from(investmentDeclarationsTable).where(eq(investmentDeclarationsTable.id, id));
@@ -120,6 +133,10 @@ router.post("/investment-declarations/:id/review", requireAuth, requireRole("sup
 
     const [existing] = await db.select().from(investmentDeclarationsTable).where(eq(investmentDeclarationsTable.id, id));
     if (!existing) { res.status(404).json({ error: "Declaration not found" }); return; }
+    if (existing.status === "verified" || existing.status === "rejected") {
+      res.status(400).json({ error: `Declaration has already been ${existing.status}` });
+      return;
+    }
 
     await db.update(investmentDeclarationsTable).set({
       status,

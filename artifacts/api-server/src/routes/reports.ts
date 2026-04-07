@@ -62,6 +62,7 @@ router.get("/reports/attendance", requireAuth, requireRole("super_admin", "hr_ad
 
     const employees = await db.select().from(employeesTable).where(eq(employeesTable.status, "active"));
     const allRecords = await db.select().from(attendanceRecordsTable);
+    const allLeave = await db.select().from(leaveRequestsTable);
 
     const depts = await db.select().from(departmentsTable);
     const deptMap = new Map(depts.map((d) => [d.id, d.name]));
@@ -71,24 +72,56 @@ router.get("/reports/attendance", requireAuth, requireRole("super_admin", "hr_ad
       return d.getMonth() + 1 === m && d.getFullYear() === y;
     });
 
+    // Count Mon–Fri working days in the month
+    function workingDaysInMonth(month: number, year: number): number {
+      let count = 0;
+      const daysInMonth = new Date(year, month, 0).getDate();
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dow = new Date(year, month - 1, day).getDay();
+        if (dow !== 0 && dow !== 6) count++;
+      }
+      return count;
+    }
+    const totalWorkingDays = workingDaysInMonth(m, y);
+
     const result = employees.map((emp) => {
       const empRecs = filtered.filter((r) => r.employeeId === emp.id);
       const presentDays = empRecs.filter((r) => r.type === "wfo" && !r.isHalfDay).length;
       const wfhDays = empRecs.filter((r) => r.type === "wfh").length;
       const halfDays = empRecs.filter((r) => r.isHalfDay).length;
-      const totalDays = presentDays + wfhDays + halfDays * 0.5;
       const overtimeHours = empRecs.reduce((s, r) => s + Math.max(0, (r.hoursWorked ?? 0) - 8), 0);
+
+      // Leave days from approved leave requests overlapping this month
+      const empLeave = allLeave.filter((l) => l.employeeId === emp.id && l.status === "approved");
+      const empLop = allLeave.filter((l) => l.employeeId === emp.id && l.status === "lop");
+      const leaveDays = empLeave
+        .filter((l) => {
+          const start = new Date(l.startDate);
+          return start.getMonth() + 1 === m && start.getFullYear() === y;
+        })
+        .reduce((s, l) => s + l.days, 0);
+      const lopDays = empLop
+        .filter((l) => {
+          const start = new Date(l.startDate);
+          return start.getMonth() + 1 === m && start.getFullYear() === y;
+        })
+        .reduce((s, l) => s + l.days, 0);
+
+      const accountedDays = presentDays + wfhDays + halfDays * 0.5 + leaveDays + lopDays;
+      const absentDays = Math.max(0, totalWorkingDays - accountedDays);
+      const totalDays = presentDays + wfhDays + halfDays * 0.5;
 
       return {
         employeeId: emp.id,
+        employeeCode: emp.employeeCode,
         employeeName: `${emp.firstName} ${emp.lastName}`,
-        department: emp.departmentId ? (deptMap.get(emp.departmentId) ?? null) : null,
+        department: emp.departmentId ? (deptMap.get(emp.departmentId) ?? "No Department") : "No Department",
         presentDays,
         wfhDays,
-        absentDays: 0,
+        absentDays,
         halfDays,
-        lopDays: 0,
-        leaveDays: 0,
+        lopDays,
+        leaveDays,
         totalDays,
         overtimeHours,
       };
@@ -244,7 +277,7 @@ router.get("/reports/lop", requireAuth, requireRole("super_admin", "hr_admin", "
     const allLeaveReqs = await db.select().from(leaveRequestsTable);
 
     const lopRequests = allLeaveReqs.filter((l) => {
-      if (l.status !== "approved") return false;
+      if (l.status !== "lop") return false;
       if (!month || !year) return false;
       const d = new Date(l.startDate);
       return d.getMonth() + 1 === parseInt(month) && d.getFullYear() === parseInt(year);

@@ -114,7 +114,7 @@ router.post("/attendance/wfh", requireAuth, async (req, res): Promise<void> => {
       // Notify manager
       const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
       if (emp?.reportingManagerId) {
-        fireAutomationEvent({ event: "employee.created", employeeId, variables: { eventType: "wfh_approval_request", date: today } }).catch(console.error);
+        fireAutomationEvent({ event: "attendance.wfh_requested", employeeId, variables: { date: today } }).catch(console.error);
       }
     }
 
