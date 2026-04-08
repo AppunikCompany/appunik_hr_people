@@ -1,7 +1,7 @@
 import { mysqlTable, varchar, text, timestamp, boolean, json } from "drizzle-orm/mysql-core";
 import { employeesTable } from "./employees";
 
-export const letterTemplatesTable = mysqlTable("letter_templates", {
+export const letterTemplatesTable = mysqlTable("people_letter_templates", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 100 }).notNull(),
   code: varchar("code", { length: 30 }).notNull().unique(),
@@ -14,7 +14,7 @@ export const letterTemplatesTable = mysqlTable("letter_templates", {
 
 export type LetterTemplate = typeof letterTemplatesTable.$inferSelect;
 
-export const generatedLettersTable = mysqlTable("generated_letters", {
+export const generatedLettersTable = mysqlTable("people_generated_letters", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   templateId: varchar("template_id", { length: 36 }).notNull(),

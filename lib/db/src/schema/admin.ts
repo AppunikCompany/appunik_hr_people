@@ -2,7 +2,7 @@ import { mysqlTable, varchar, text, timestamp, boolean, int } from "drizzle-orm/
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const departmentsTable = mysqlTable("departments", {
+export const departmentsTable = mysqlTable("people_departments", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 255 }).notNull().unique(),
   headId: varchar("head_id", { length: 36 }),
@@ -12,7 +12,7 @@ export const departmentsTable = mysqlTable("departments", {
 
 export type Department = typeof departmentsTable.$inferSelect;
 
-export const designationsTable = mysqlTable("designations", {
+export const designationsTable = mysqlTable("people_designations", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 255 }).notNull(),
   departmentId: varchar("department_id", { length: 36 }),
@@ -23,7 +23,7 @@ export const designationsTable = mysqlTable("designations", {
 
 export type Designation = typeof designationsTable.$inferSelect;
 
-export const companyProfileTable = mysqlTable("company_profile", {
+export const companyProfileTable = mysqlTable("people_company_profile", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 255 }).notNull(),
   logoUrl: text("logo_url"),
@@ -36,7 +36,7 @@ export const companyProfileTable = mysqlTable("company_profile", {
 
 export type CompanyProfile = typeof companyProfileTable.$inferSelect;
 
-export const notificationSettingsTable = mysqlTable("notification_settings", {
+export const notificationSettingsTable = mysqlTable("people_notification_settings", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   eventType: varchar("event_type", { length: 100 }).notNull().unique(),
   label: varchar("label", { length: 255 }).notNull(),
@@ -46,7 +46,7 @@ export const notificationSettingsTable = mysqlTable("notification_settings", {
 
 export type NotificationSetting = typeof notificationSettingsTable.$inferSelect;
 
-export const financialYearConfigTable = mysqlTable("financial_year_config", {
+export const financialYearConfigTable = mysqlTable("people_financial_year_config", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   startMonth: int("start_month").notNull().default(4),
   startDay: int("start_day").notNull().default(1),
@@ -58,7 +58,7 @@ export const financialYearConfigTable = mysqlTable("financial_year_config", {
 
 export type FinancialYearConfig = typeof financialYearConfigTable.$inferSelect;
 
-export const appConfigTable = mysqlTable("app_config", {
+export const appConfigTable = mysqlTable("people_app_config", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   key: varchar("key", { length: 100 }).notNull().unique(),
   value: text("value").notNull(),
@@ -67,7 +67,7 @@ export const appConfigTable = mysqlTable("app_config", {
 
 export type AppConfig = typeof appConfigTable.$inferSelect;
 
-export const rolesTable = mysqlTable("roles", {
+export const rolesTable = mysqlTable("people_roles", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 50 }).notNull().unique(),
   description: varchar("description", { length: 255 }),
@@ -79,7 +79,7 @@ export const rolesTable = mysqlTable("roles", {
 
 export type Role = typeof rolesTable.$inferSelect;
 
-export const rolePermissionsTable = mysqlTable("role_permissions", {
+export const rolePermissionsTable = mysqlTable("people_role_permissions", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   roleId: varchar("role_id", { length: 36 }).notNull(),
   module: varchar("module", { length: 50 }).notNull(),

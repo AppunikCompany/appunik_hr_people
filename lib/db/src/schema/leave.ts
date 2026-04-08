@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { employeesTable } from "./employees";
 
-export const leaveTypesTable = mysqlTable("leave_types", {
+export const leaveTypesTable = mysqlTable("people_leave_types", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 100 }).notNull(),
   code: varchar("code", { length: 20 }).notNull().unique(),
@@ -18,7 +18,7 @@ export const leaveTypesTable = mysqlTable("leave_types", {
 
 export type LeaveType = typeof leaveTypesTable.$inferSelect;
 
-export const leaveBalancesTable = mysqlTable("leave_balances", {
+export const leaveBalancesTable = mysqlTable("people_leave_balances", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   leaveTypeId: varchar("leave_type_id", { length: 36 }).notNull().references(() => leaveTypesTable.id, { onDelete: "cascade" }),
@@ -30,7 +30,7 @@ export const leaveBalancesTable = mysqlTable("leave_balances", {
 
 export type LeaveBalance = typeof leaveBalancesTable.$inferSelect;
 
-export const leaveRequestsTable = mysqlTable("leave_requests", {
+export const leaveRequestsTable = mysqlTable("people_leave_requests", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   leaveTypeId: varchar("leave_type_id", { length: 36 }).notNull().references(() => leaveTypesTable.id),
@@ -47,7 +47,7 @@ export const leaveRequestsTable = mysqlTable("leave_requests", {
 
 export type LeaveRequest = typeof leaveRequestsTable.$inferSelect;
 
-export const compoffsTable = mysqlTable("compoffs", {
+export const compoffsTable = mysqlTable("people_compoffs", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   workDate: varchar("work_date", { length: 20 }).notNull(),
@@ -60,7 +60,7 @@ export const compoffsTable = mysqlTable("compoffs", {
 
 export type Compoff = typeof compoffsTable.$inferSelect;
 
-export const leavePoliciesTable = mysqlTable("leave_policies", {
+export const leavePoliciesTable = mysqlTable("people_leave_policies", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   leaveTypeId: varchar("leave_type_id", { length: 36 }).notNull().references(() => leaveTypesTable.id, { onDelete: "cascade" }).unique(),
   noLeaveInProbation: boolean("no_leave_in_probation").notNull().default(false),

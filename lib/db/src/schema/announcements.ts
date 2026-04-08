@@ -1,6 +1,6 @@
 import { mysqlTable, varchar, text, timestamp, boolean } from "drizzle-orm/mysql-core";
 
-export const announcementsTable = mysqlTable("announcements", {
+export const announcementsTable = mysqlTable("people_announcements", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   title: varchar("title", { length: 255 }).notNull(),
   content: text("content").notNull(),

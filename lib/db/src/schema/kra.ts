@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { employeesTable } from "./employees";
 
-export const kraTemplatesTable = mysqlTable("kra_templates", {
+export const kraTemplatesTable = mysqlTable("people_kra_templates", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 255 }).notNull(),
   designation: varchar("designation", { length: 255 }),
@@ -15,7 +15,7 @@ export const kraTemplatesTable = mysqlTable("kra_templates", {
 
 export type KraTemplate = typeof kraTemplatesTable.$inferSelect;
 
-export const reviewCyclesTable = mysqlTable("review_cycles", {
+export const reviewCyclesTable = mysqlTable("people_review_cycles", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 255 }).notNull(),
   cycleType: varchar("cycle_type", { length: 30 }).notNull().default("annual"),
@@ -29,7 +29,7 @@ export const reviewCyclesTable = mysqlTable("review_cycles", {
 
 export type ReviewCycle = typeof reviewCyclesTable.$inferSelect;
 
-export const kraAssignmentsTable = mysqlTable("kra_assignments", {
+export const kraAssignmentsTable = mysqlTable("people_kra_assignments", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   cycleId: varchar("cycle_id", { length: 36 }).notNull().references(() => reviewCyclesTable.id, { onDelete: "cascade" }),

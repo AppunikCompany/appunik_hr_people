@@ -1,6 +1,6 @@
 import { mysqlTable, varchar, text, timestamp, int, json } from "drizzle-orm/mysql-core";
 
-export const importLogsTable = mysqlTable("import_logs", {
+export const importLogsTable = mysqlTable("people_import_logs", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   importType: varchar("import_type", { length: 30 }).notNull(), // employees, assets, kra
   totalRows: int("total_rows").notNull().default(0),

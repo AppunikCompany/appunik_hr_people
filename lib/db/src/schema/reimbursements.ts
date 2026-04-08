@@ -1,7 +1,7 @@
 import { mysqlTable, varchar, text, timestamp, double } from "drizzle-orm/mysql-core";
 import { employeesTable } from "./employees";
 
-export const reimbursementsTable = mysqlTable("reimbursements", {
+export const reimbursementsTable = mysqlTable("people_reimbursements", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   category: varchar("category", { length: 50 }).notNull(), // travel, food, medical, office_supplies, other

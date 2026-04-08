@@ -1,7 +1,7 @@
 import { mysqlTable, varchar, text, timestamp, boolean } from "drizzle-orm/mysql-core";
 import { employeesTable } from "./employees";
 
-export const exitRequestsTable = mysqlTable("exit_requests", {
+export const exitRequestsTable = mysqlTable("people_exit_requests", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }).unique(),
   resignationDate: varchar("resignation_date", { length: 20 }).notNull(),
@@ -16,7 +16,7 @@ export const exitRequestsTable = mysqlTable("exit_requests", {
 
 export type ExitRequest = typeof exitRequestsTable.$inferSelect;
 
-export const exitChecklistItemsTable = mysqlTable("exit_checklist_items", {
+export const exitChecklistItemsTable = mysqlTable("people_exit_checklist_items", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   exitRequestId: varchar("exit_request_id", { length: 36 }).notNull().references(() => exitRequestsTable.id, { onDelete: "cascade" }),
   task: varchar("task", { length: 255 }).notNull(),

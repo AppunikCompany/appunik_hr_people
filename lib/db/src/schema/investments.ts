@@ -1,7 +1,7 @@
 import { mysqlTable, varchar, text, timestamp, double, int } from "drizzle-orm/mysql-core";
 import { employeesTable } from "./employees";
 
-export const investmentDeclarationsTable = mysqlTable("investment_declarations", {
+export const investmentDeclarationsTable = mysqlTable("people_investment_declarations", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   financialYear: varchar("financial_year", { length: 20 }).notNull(), // e.g. "2025-26"
