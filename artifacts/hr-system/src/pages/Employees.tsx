@@ -43,6 +43,7 @@ type Employee = {
   joiningDate: string;
   employmentType: string;
   status: string;
+  zktecoMemberId: number | null;
 };
 
 type EmployeeForm = {
@@ -55,6 +56,7 @@ type EmployeeForm = {
   joiningDate: string;
   employmentType: string;
   status: string;
+  zktecoMemberId: string; // MEM 1, MEM 2… biometric device enrollment number
 };
 
 function EmployeeFormDialog({
@@ -79,16 +81,22 @@ function EmployeeFormDialog({
     joiningDate: initial?.joiningDate ?? new Date().toISOString().split("T")[0],
     employmentType: initial?.employmentType ?? "full_time",
     status: initial?.status ?? "active",
+    zktecoMemberId: initial?.zktecoMemberId ?? "",
   });
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
   const qc = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (data: EmployeeForm) =>
-      isEdit
-        ? fetchApi(`/employees/${employeeId}`, { method: "PATCH", body: JSON.stringify(data) })
-        : fetchApi("/employees", { method: "POST", body: JSON.stringify(data) }),
+    mutationFn: (data: EmployeeForm) => {
+      const payload = {
+        ...data,
+        zktecoMemberId: data.zktecoMemberId ? parseInt(data.zktecoMemberId, 10) : null,
+      };
+      return isEdit
+        ? fetchApi(`/employees/${employeeId}`, { method: "PATCH", body: JSON.stringify(payload) })
+        : fetchApi("/employees", { method: "POST", body: JSON.stringify(payload) });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["employees"] });
       onClose();
@@ -168,6 +176,22 @@ function EmployeeFormDialog({
                 {STATUSES.map((s) => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
               </SelectContent>
             </Select>
+          </div>
+          <div>
+            <Label>Biometric Member ID</Label>
+            <div className="relative mt-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-medium pointer-events-none">MEM</span>
+              <Input
+                type="number"
+                min="1"
+                max="9999"
+                value={form.zktecoMemberId}
+                onChange={(e) => set("zktecoMemberId", e.target.value)}
+                className="pl-11"
+                placeholder="e.g. 1"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">Enrollment number on the biometric attendance device</p>
           </div>
         </div>
         <DialogFooter>
@@ -278,7 +302,7 @@ export default function Employees() {
   const { data: employees, isLoading } = useEmployees();
   const { data: depts } = useDepartments();
 
-  const filtered = (employees as Employee[] ?? []).filter((emp) => {
+  const filtered = ((employees as any[]) ?? [] as Employee[]).filter((emp: Employee) => {
     const q = search.toLowerCase();
     const matchSearch =
       !search ||
@@ -306,7 +330,7 @@ export default function Employees() {
       />
 
       {showOrgChart ? (
-        <OrgChart employees={employees as Employee[] ?? []} />
+        <OrgChart employees={((employees as any[]) ?? []) as Employee[]} />
       ) : (
       <div className="bg-white border border-border rounded-lg shadow-sm">
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
@@ -406,7 +430,7 @@ export default function Employees() {
         </div>
 
         <div className="px-5 py-3 border-t border-border text-xs text-muted-foreground">
-          Showing {filtered.length} of {(employees as Employee[] ?? []).length} employees
+          Showing {filtered.length} of {((employees as any[]) ?? []).length} employees
         </div>
       </div>
       )}
@@ -432,6 +456,7 @@ export default function Employees() {
             joiningDate: editEmployee.joiningDate,
             employmentType: editEmployee.employmentType,
             status: editEmployee.status,
+            zktecoMemberId: editEmployee.zktecoMemberId ? String(editEmployee.zktecoMemberId) : "",
           }}
         />
       )}

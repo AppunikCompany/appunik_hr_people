@@ -8,6 +8,7 @@ import { dirname, resolve } from "node:path";
 import router from "./routes";
 import { resolveUserMiddleware } from "./middlewares/authMiddleware";
 import { seedSystemRoles } from "./lib/seedRoles";
+import { handleAdmsPush } from "./routes/zkteco";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -30,6 +31,12 @@ app.use(resolveUserMiddleware);
 
 // Seed system roles and default permissions on startup
 seedSystemRoles().catch((err) => console.error("[seed] Failed to seed roles:", err));
+
+// ZKTeco ADMS push protocol — /iclock path is hardcoded in ZKTeco firmware
+// Configure on device: Comm → Cloud Server → Server = <this-server-ip>, Port = 3001
+app.get("/iclock/cdata", express.text({ type: "*/*" }), handleAdmsPush);
+app.post("/iclock/cdata", express.text({ type: "*/*" }), handleAdmsPush);
+app.get("/iclock/ping", (_req, res) => res.send("OK"));
 
 app.use("/api", router);
 

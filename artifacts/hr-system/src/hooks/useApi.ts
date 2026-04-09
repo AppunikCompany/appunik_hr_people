@@ -481,3 +481,64 @@ export function useAdminUsers() {
     queryFn: () => fetchApi<AdminUser[]>("/admin/users"),
   });
 }
+
+
+// ─── ZKTeco Biometric Integration ────────────────────────────────────────────
+
+export type ZktecoDevice = {
+  id: string;
+  name: string;
+  serialNumber: string | null;
+  ipAddress: string | null;
+  port: number | null;
+  location: string | null;
+  isActive: boolean;
+  syncMode: string;
+  lastSyncAt: string | null;
+  createdAt: string;
+};
+
+export type ZktecoEmployeeMap = {
+  id: string;
+  deviceId: string;
+  enrollmentNumber: number;
+  employeeId: string;
+  firstName: string | null;
+  lastName: string | null;
+  employeeCode: string | null;
+  createdAt: string;
+};
+
+export type ZktecoSyncLog = {
+  id: string;
+  deviceId: string | null;
+  deviceName: string | null;
+  syncedAt: string;
+  recordsFound: number;
+  recordsProcessed: number;
+  attendanceCreated: number;
+  status: string;
+  source: string;
+  errorMessage: string | null;
+};
+
+export function useZktecoDevices() {
+  return useQuery({
+    queryKey: ["zkteco-devices"],
+    queryFn: () => fetchApi<ZktecoDevice[]>("/zkteco/devices"),
+  });
+}
+
+export function useZktecoEmployeeMap() {
+  return useQuery({
+    queryKey: ["zkteco-employee-map"],
+    queryFn: () => fetchApi<ZktecoEmployeeMap[]>("/zkteco/employee-map"),
+  });
+}
+
+export function useZktecoSyncLogs() {
+  return useQuery({
+    queryKey: ["zkteco-sync-logs"],
+    queryFn: () => fetchApi<ZktecoSyncLog[]>("/zkteco/sync-logs"),
+  });
+}

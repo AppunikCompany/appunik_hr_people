@@ -14,6 +14,7 @@ import selfServiceRouter from "./selfservice";
 import importsRouter from "./imports";
 import reimbursementsRouter from "./reimbursements";
 import investmentsRouter from "./investments";
+import zktecoRouter from "./zkteco";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(selfServiceRouter);
 router.use(importsRouter);
 router.use(reimbursementsRouter);
 router.use(investmentsRouter);
+router.use(zktecoRouter);
 
 export default router;

@@ -13,7 +13,10 @@
   "private": true,
   "devDependencies": {
     "concurrently": "^9.1.2",
-    "typescript": "~5.9.2",
-    "prettier": "^3.8.1"
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2"
+  },
+  "dependencies": {
+    "@tailwindcss/oxide-darwin-arm64": "^4.2.2"
   }
 }
