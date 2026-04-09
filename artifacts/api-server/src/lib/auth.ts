@@ -22,6 +22,7 @@ export async function resolveClerkUser(clerkUserId: string): Promise<AuthUser | 
       lastName: existing.lastName,
       profileImageUrl: existing.profileImageUrl,
       role: existing.role as AuthUser["role"],
+      permissions: {},
     };
   }
 
@@ -49,6 +50,7 @@ export async function resolveClerkUser(clerkUserId: string): Promise<AuthUser | 
       lastName: created.lastName,
       profileImageUrl: created.profileImageUrl,
       role: created.role as AuthUser["role"],
+      permissions: {},
     };
   } catch (err) {
     console.error("Failed to resolve Clerk user:", err);

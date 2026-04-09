@@ -17,21 +17,29 @@ import { toast } from "sonner";
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const YEARS = [2024, 2025, 2026];
 
+const EMPTY_HOLIDAY = { name: "", date: "", type: "national", year: new Date().getFullYear() };
+
 function AddHolidayDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [form, setForm] = useState({ name: "", date: "", type: "national", year: new Date().getFullYear() });
+  const [form, setForm] = useState(EMPTY_HOLIDAY);
   const qc = useQueryClient();
   const mutation = useMutation({
     mutationFn: (d: any) => fetchApi("/holidays", { method: "POST", body: JSON.stringify(d) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["holidays"] }); onClose(); toast.success("Holiday added"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["holidays"] }); setForm(EMPTY_HOLIDAY); onClose(); toast.success("Holiday added"); },
     onError: (e: any) => toast.error(e.message),
   });
 
+  const handleSubmit = () => {
+    if (!form.name.trim()) { toast.error("Holiday name is required"); return; }
+    if (!form.date) { toast.error("Date is required"); return; }
+    mutation.mutate(form);
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) { setForm(EMPTY_HOLIDAY); onClose(); } }}>
       <DialogContent onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
         <DialogHeader><DialogTitle>Add Holiday</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
-          <div><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="mt-1" /></div>
+          <div><Label>Name *</Label><Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="mt-1" placeholder="e.g. Diwali" /></div>
           <div><Label>Date *</Label><Input type="date" max="9999-12-31" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value, year: new Date(e.target.value).getFullYear() }))} className="mt-1" /></div>
           <div>
             <Label>Type</Label>
@@ -43,8 +51,8 @@ function AddHolidayDialog({ open, onClose }: { open: boolean; onClose: () => voi
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={mutation.isPending}>{mutation.isPending ? "Adding..." : "Add"}</Button>
+          <Button variant="outline" onClick={() => { setForm(EMPTY_HOLIDAY); onClose(); }}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={mutation.isPending}>{mutation.isPending ? "Adding..." : "Add Holiday"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -99,11 +107,6 @@ export default function Attendance() {
         title="Attendance"
         subtitle={`Today — ${new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`}
         breadcrumbs={[{ label: "Attendance" }]}
-        actions={
-          <Button size="sm" onClick={() => setAddHoliday(true)}>
-            <Plus className="w-4 h-4 mr-1" /> Add Holiday
-          </Button>
-        }
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -311,6 +314,11 @@ export default function Attendance() {
 
         {/* ── HOLIDAYS ── */}
         <TabsContent value="holidays">
+          <div className="flex justify-end mb-4">
+            <Button size="sm" onClick={() => setAddHoliday(true)}>
+              <Plus className="w-4 h-4 mr-1" /> Add Holiday
+            </Button>
+          </div>
           <div className="bg-white border border-border rounded-lg shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">

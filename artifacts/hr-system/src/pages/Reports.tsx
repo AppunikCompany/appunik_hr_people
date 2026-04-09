@@ -127,7 +127,7 @@ export default function Reports() {
                       ))}
                     </Pie>
                     <Legend formatter={(value: string) => formatEnum(value)} />
-                    <Tooltip formatter={(_: unknown, name: string) => [_, formatEnum(name)]} />
+                    <Tooltip formatter={(value: number | string, name: string) => [value, formatEnum(name)]} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>

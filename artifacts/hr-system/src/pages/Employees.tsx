@@ -295,7 +295,7 @@ export default function Employees() {
     <PageContainer>
       <PageHeader
         title={showOrgChart ? "Org Chart" : "Employees"}
-        breadcrumbs={showOrgChart ? [{ label: "Employees", href: "/employees" }, { label: "Org Chart" }] : [{ label: "Employees" }]}
+        breadcrumbs={showOrgChart ? [{ label: "Employees", href: "/employees" }, { label: "Org Chart" }] : [{ label: "Employees", href: "/employees" }, { label: "All Employees" }]}
         actions={
           !showOrgChart && (
             <Button onClick={() => setAddOpen(true)} size="sm">
@@ -412,6 +412,7 @@ export default function Employees() {
       )}
 
       <EmployeeFormDialog
+        key={addOpen ? "add-open" : "add-closed"}
         open={addOpen}
         onClose={() => setAddOpen(false)}
       />

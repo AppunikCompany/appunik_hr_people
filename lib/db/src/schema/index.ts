@@ -10,3 +10,6 @@ export * from "./automations";
 export * from "./imports";
 export * from "./reimbursements";
 export * from "./investments";
+export * from "./announcements";
+export * from "./exit";
+export * from "./letters";

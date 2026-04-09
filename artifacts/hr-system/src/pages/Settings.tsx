@@ -172,8 +172,8 @@ function RoleDialog({ role, open, onClose }: { role?: Role; open: boolean; onClo
           body: JSON.stringify({ name, description: description || null, permissions: permArray }),
         });
       }
-      await fetchApi(`/admin/roles/${role.id}`, { method: "PATCH", body: JSON.stringify({ name, description: description || null }) });
-      await fetchApi(`/admin/roles/${role.id}/permissions`, { method: "PUT", body: JSON.stringify(permArray) });
+      await fetchApi(`/admin/roles/${role!.id}`, { method: "PATCH", body: JSON.stringify({ name, description: description || null }) });
+      return fetchApi(`/admin/roles/${role!.id}/permissions`, { method: "PUT", body: JSON.stringify(permArray) });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["roles"] });
@@ -211,12 +211,12 @@ function RoleDialog({ role, open, onClose }: { role?: Role; open: boolean; onClo
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Role Name</p>
-                <p className="text-sm font-semibold capitalize">{role.name.replace(/_/g, " ")}</p>
+                <p className="text-sm font-semibold capitalize">{role!.name.replace(/_/g, " ")}</p>
               </div>
-              {role.description && (
+              {role!.description && (
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Description</p>
-                  <p className="text-sm">{role.description}</p>
+                  <p className="text-sm">{role!.description}</p>
                 </div>
               )}
             </div>
@@ -233,7 +233,7 @@ function RoleDialog({ role, open, onClose }: { role?: Role; open: boolean; onClo
                 </thead>
                 <tbody>
                   {MODULES.map((m, i) => {
-                    const p = role.permissions.find(x => x.module === m.key);
+                    const p = role!.permissions.find(x => x.module === m.key);
                     return (
                       <tr key={m.key} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
                         <td className="px-4 py-2.5 font-medium">{m.label}</td>

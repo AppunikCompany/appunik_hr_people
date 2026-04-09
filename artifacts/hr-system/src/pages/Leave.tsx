@@ -72,10 +72,11 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => {
-              if (!form.employeeId || !form.leaveTypeId || !form.startDate || !form.endDate) {
-                toast.error("Employee, Leave Type, Start Date and End Date are required");
-                return;
-              }
+              if (!form.employeeId) { toast.error("Please select an employee"); return; }
+              if (!form.leaveTypeId) { toast.error("Please select a leave type"); return; }
+              if (!form.startDate) { toast.error("Start date is required"); return; }
+              if (!form.endDate) { toast.error("End date is required"); return; }
+              if (new Date(form.endDate) < new Date(form.startDate)) { toast.error("End date must be after start date"); return; }
               mutation.mutate(form);
             }}
             disabled={mutation.isPending}
