@@ -132,8 +132,7 @@ export async function handleAdmsPush(req: Request, res: Response) {
           .limit(1);
 
         if (!existing) {
-          // First punch of the day → create record as clock-in
-          const isLate = punchType === "in" && (punchDate.getHours() > 9 || (punchDate.getHours() === 9 && punchDate.getMinutes() > 30));
+          // First punch of the day — create the attendance record
           await db.insert(attendanceRecordsTable).values({
             id:         crypto.randomUUID(),
             employeeId: employee.id,
@@ -141,24 +140,18 @@ export async function handleAdmsPush(req: Request, res: Response) {
             clockIn:    punchType === "in"  ? punchDate : null,
             clockOut:   punchType === "out" ? punchDate : null,
             type:       "wfo",
-            isLate,
-            notes:      `Biometric — ${verifyMethod}`,
           });
         } else {
-          // Subsequent punch → fill in clockOut or update clockIn
+          // Subsequent punches:
+          //   "in"  → record the first clock-in only (preserve original entry time)
+          //   "out" → always overwrite with the latest clock-out (handles lunch breaks etc.)
           if (punchType === "in" && !existing.clockIn) {
-            const isLate = punchDate.getHours() > 9 || (punchDate.getHours() === 9 && punchDate.getMinutes() > 30);
             await db.update(attendanceRecordsTable)
-              .set({ clockIn: punchDate, isLate })
+              .set({ clockIn: punchDate })
               .where(eq(attendanceRecordsTable.id, existing.id));
           } else if (punchType === "out") {
-            const clockInTime = existing.clockIn ? new Date(existing.clockIn) : null;
-            const hoursWorked = clockInTime
-              ? (punchDate.getTime() - clockInTime.getTime()) / 3_600_000
-              : null;
-            const isHalfDay = hoursWorked !== null && hoursWorked < 4;
             await db.update(attendanceRecordsTable)
-              .set({ clockOut: punchDate, hoursWorked, isHalfDay })
+              .set({ clockOut: punchDate })
               .where(eq(attendanceRecordsTable.id, existing.id));
           }
         }
