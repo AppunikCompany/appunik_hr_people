@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { departmentsTable } from "./admin";
 
-export const employeesTable = mysqlTable("employees", {
+export const employeesTable = mysqlTable("people_employees", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeCode: varchar("employee_code", { length: 20 }).notNull().unique(),
   firstName: varchar("first_name", { length: 100 }).notNull(),
@@ -34,7 +34,7 @@ export const insertEmployeeSchema = createInsertSchema(employeesTable).omit({ id
 export type InsertEmployee = z.infer<typeof insertEmployeeSchema>;
 export type Employee = typeof employeesTable.$inferSelect;
 
-export const employeeDocumentsTable = mysqlTable("employee_documents", {
+export const employeeDocumentsTable = mysqlTable("people_employee_documents", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   documentType: varchar("document_type", { length: 50 }).notNull(),
@@ -49,7 +49,7 @@ export const employeeDocumentsTable = mysqlTable("employee_documents", {
 
 export type EmployeeDocument = typeof employeeDocumentsTable.$inferSelect;
 
-export const employeeHistoryTable = mysqlTable("employee_history", {
+export const employeeHistoryTable = mysqlTable("people_employee_history", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   changeType: varchar("change_type", { length: 50 }).notNull(),

@@ -12,13 +12,13 @@ export const sessionsTable = mysqlTable(
 );
 
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
-export const usersTable = mysqlTable("users", {
+export const usersTable = mysqlTable("people_users", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   email: varchar("email", { length: 255 }).unique(),
   firstName: varchar("first_name", { length: 100 }),
   lastName: varchar("last_name", { length: 100 }),
   profileImageUrl: varchar("profile_image_url", { length: 500 }),
-  role: varchar("role", { length: 20, enum: ["super_admin", "hr_admin", "it_admin", "manager", "employee"] }).notNull().default("employee"),
+  role: varchar("role", { length: 50 }).notNull().default("employee"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });

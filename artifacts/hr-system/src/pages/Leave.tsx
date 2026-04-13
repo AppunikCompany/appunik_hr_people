@@ -16,7 +16,7 @@ import { Plus, Check, X, Calendar, Info } from "lucide-react";
 import { toast } from "sonner";
 
 function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [form, setForm] = useState({ employeeId: "", leaveTypeId: "", startDate: "", endDate: "", reason: "" });
+  const [form, setForm] = useState({ employeeId: "", leaveTypeId: "", startDate: "", endDate: "", reason: "", leaveDuration: "full_day" });
   const { data: employees } = useEmployees();
   const { data: types } = useLeaveTypes();
   const qc = useQueryClient();
@@ -56,13 +56,24 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
               </SelectContent>
             </Select>
           </div>
+          <div>
+            <Label>Duration</Label>
+            <Select value={form.leaveDuration} onValueChange={v => set("leaveDuration", v)}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="full_day">Full Day</SelectItem>
+                <SelectItem value="half_day_morning">Half Day (Morning)</SelectItem>
+                <SelectItem value="half_day_afternoon">Half Day (Afternoon)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label>Start Date *</Label>
               <Input type="date" max="9999-12-31" value={form.startDate} onChange={e => set("startDate", e.target.value)} className="mt-1" />
             </div>
             <div>
-              <Label>End Date *</Label>
+              <Label>{form.leaveDuration === "full_day" ? "End Date *" : "Date *"}</Label>
               <Input type="date" max="9999-12-31" value={form.endDate} onChange={e => set("endDate", e.target.value)} className="mt-1" />
             </div>
           </div>
@@ -75,9 +86,11 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
               if (!form.employeeId) { toast.error("Please select an employee"); return; }
               if (!form.leaveTypeId) { toast.error("Please select a leave type"); return; }
               if (!form.startDate) { toast.error("Start date is required"); return; }
-              if (!form.endDate) { toast.error("End date is required"); return; }
-              if (new Date(form.endDate) < new Date(form.startDate)) { toast.error("End date must be after start date"); return; }
-              mutation.mutate(form);
+              const isHalfDay = form.leaveDuration !== "full_day";
+              const endDate = isHalfDay ? form.startDate : form.endDate;
+              if (!isHalfDay && !form.endDate) { toast.error("End date is required"); return; }
+              if (!isHalfDay && new Date(endDate) < new Date(form.startDate)) { toast.error("End date must be after start date"); return; }
+              mutation.mutate({ ...form, endDate, isHalfDay, halfDayPeriod: isHalfDay ? form.leaveDuration : undefined });
             }}
             disabled={mutation.isPending}
           >

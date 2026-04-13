@@ -27,6 +27,13 @@ export async function fetchApi<T>(path: string, options?: RequestInit): Promise<
 
 // ─── Domain types ────────────────────────────────────────────────────────────
 
+export interface ModulePermission {
+  view: boolean;
+  create: boolean;
+  edit: boolean;
+  delete: boolean;
+}
+
 export interface AuthUser {
   id: string | null;
   username?: string | null;
@@ -36,6 +43,37 @@ export interface AuthUser {
   role: string;
   employeeId?: string | null;
   profileImageUrl?: string | null;
+  permissions?: Record<string, ModulePermission>;
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  description?: string | null;
+  isSystem: boolean;
+  isProtected: boolean;
+  createdAt: string;
+  updatedAt: string;
+  permissions: Array<{
+    id: string;
+    roleId: string;
+    module: string;
+    canView: boolean;
+    canCreate: boolean;
+    canEdit: boolean;
+    canDelete: boolean;
+  }>;
+}
+
+export interface AdminUser {
+  id: string;
+  email?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  role: string;
+  employeeId?: string | null;
+  employeeCode?: string | null;
+  createdAt: string;
 }
 
 export interface Department {
@@ -427,5 +465,19 @@ export function useNotificationSettings() {
   return useQuery({
     queryKey: ["notification-settings"],
     queryFn: () => fetchApi<NotificationSetting[]>("/admin/notification-settings"),
+  });
+}
+
+export function useRoles() {
+  return useQuery({
+    queryKey: ["roles"],
+    queryFn: () => fetchApi<Role[]>("/admin/roles"),
+  });
+}
+
+export function useAdminUsers() {
+  return useQuery({
+    queryKey: ["admin-users"],
+    queryFn: () => fetchApi<AdminUser[]>("/admin/users"),
   });
 }

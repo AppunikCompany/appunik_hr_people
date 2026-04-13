@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { employeesTable } from "./employees";
 
-export const assetCategoriesTable = mysqlTable("asset_categories", {
+export const assetCategoriesTable = mysqlTable("people_asset_categories", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 255 }).notNull().unique(),
   depreciationRate: double("depreciation_rate"),
@@ -12,7 +12,7 @@ export const assetCategoriesTable = mysqlTable("asset_categories", {
 
 export type AssetCategory = typeof assetCategoriesTable.$inferSelect;
 
-export const assetsTable = mysqlTable("assets", {
+export const assetsTable = mysqlTable("people_assets", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   assetCode: varchar("asset_code", { length: 20 }).notNull().unique(),
   name: varchar("name", { length: 255 }).notNull(),
@@ -31,7 +31,7 @@ export const assetsTable = mysqlTable("assets", {
 
 export type Asset = typeof assetsTable.$inferSelect;
 
-export const assetAssignmentsTable = mysqlTable("asset_assignments", {
+export const assetAssignmentsTable = mysqlTable("people_asset_assignments", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   assetId: varchar("asset_id", { length: 36 }).notNull().references(() => assetsTable.id, { onDelete: "cascade" }),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),

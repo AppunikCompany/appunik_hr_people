@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import {
   useDepartments, useDesignations, useCompanyProfile, useLeaveTypes,
@@ -161,6 +161,13 @@ function RoleDialog({ role, open, onClose }: { role?: Role; open: boolean; onClo
   const qc = useQueryClient();
   const isEdit = !!role;
   const isProtected = role?.isProtected ?? false;
+
+  // Sync state whenever the role prop changes (e.g. switching between edit targets)
+  useEffect(() => {
+    setName(role?.name ?? "");
+    setDescription(role?.description ?? "");
+    setPerms(initPermMatrix(role?.permissions));
+  }, [role?.id]);
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -705,6 +712,7 @@ export default function Settings() {
             </div>
 
             <RoleDialog
+              key={editRole?.id ?? "new-role"}
               role={editRole ?? undefined}
               open={roleDialogOpen}
               onClose={() => { setRoleDialogOpen(false); setEditRole(null); }}

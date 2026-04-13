@@ -2,7 +2,7 @@ import { mysqlTable, varchar, text, timestamp, boolean, json } from "drizzle-orm
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
-export const emailTemplatesTable = mysqlTable("email_templates", {
+export const emailTemplatesTable = mysqlTable("people_email_templates", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   code: varchar("code", { length: 50 }).notNull().unique(),
   name: varchar("name", { length: 100 }).notNull(),
@@ -15,7 +15,7 @@ export const emailTemplatesTable = mysqlTable("email_templates", {
 
 export type EmailTemplate = typeof emailTemplatesTable.$inferSelect;
 
-export const automationRulesTable = mysqlTable("automation_rules", {
+export const automationRulesTable = mysqlTable("people_automation_rules", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 100 }).notNull(),
   code: varchar("code", { length: 50 }).notNull().unique(),
@@ -31,7 +31,7 @@ export const automationRulesTable = mysqlTable("automation_rules", {
 
 export type AutomationRule = typeof automationRulesTable.$inferSelect;
 
-export const automationLogsTable = mysqlTable("automation_logs", {
+export const automationLogsTable = mysqlTable("people_automation_logs", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   ruleId: varchar("rule_id", { length: 36 }).notNull().references(() => automationRulesTable.id),
   employeeId: varchar("employee_id", { length: 36 }),

@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { employeesTable } from "./employees";
 
-export const attendanceRecordsTable = mysqlTable("attendance_records", {
+export const attendanceRecordsTable = mysqlTable("people_attendance_records", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   date: varchar("date", { length: 20 }).notNull(),
@@ -20,7 +20,7 @@ export const attendanceRecordsTable = mysqlTable("attendance_records", {
 
 export type AttendanceRecord = typeof attendanceRecordsTable.$inferSelect;
 
-export const overtimeLogsTable = mysqlTable("overtime_logs", {
+export const overtimeLogsTable = mysqlTable("people_overtime_logs", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
   date: varchar("date", { length: 20 }).notNull(),
@@ -31,7 +31,7 @@ export const overtimeLogsTable = mysqlTable("overtime_logs", {
 
 export type OvertimeLog = typeof overtimeLogsTable.$inferSelect;
 
-export const holidaysTable = mysqlTable("holidays", {
+export const holidaysTable = mysqlTable("people_holidays", {
   id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
   name: varchar("name", { length: 255 }).notNull(),
   date: varchar("date", { length: 20 }).notNull(),

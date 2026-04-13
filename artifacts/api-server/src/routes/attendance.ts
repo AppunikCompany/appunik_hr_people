@@ -306,4 +306,102 @@ router.delete("/holidays/:id", requireAuth, requireRole("super_admin", "hr_admin
   }
 });
 
+// ── ATTENDANCE REGULARIZATION ──
+
+router.post("/attendance/regularization", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const { employeeId: clientId, date, requestedClockIn, requestedClockOut, reason } = req.body as Record<string, string>;
+    const employeeId = await resolveEmployeeId(req, res, clientId);
+    if (!employeeId) return;
+    if (!date) { res.status(400).json({ error: "Date is required" }); return; }
+    if (!reason || !reason.trim()) { res.status(400).json({ error: "Reason is required" }); return; }
+
+    const id = crypto.randomUUID();
+    const clockIn = requestedClockIn ? new Date(requestedClockIn) : null;
+    const clockOut = requestedClockOut ? new Date(requestedClockOut) : null;
+
+    await (db as any).execute(
+      `INSERT INTO people_attendance_regularizations (id, employee_id, date, requested_clock_in, requested_clock_out, reason, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
+      [id, employeeId, date, clockIn, clockOut, reason.trim()]
+    );
+
+    res.status(201).json({ id, employeeId, date, requestedClockIn, requestedClockOut, reason: reason.trim(), status: "pending" });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.get("/attendance/regularization", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const { employeeId: clientId } = req.query as Record<string, string>;
+    let employeeId: string | undefined;
+
+    if (isPrivileged(req)) {
+      employeeId = clientId;
+    } else {
+      const resolved = await resolveEmployeeId(req, res, clientId);
+      if (!resolved) return;
+      employeeId = resolved;
+    }
+
+    let query = `SELECT r.*, CONCAT(e.first_name, ' ', e.last_name) as employee_name FROM people_attendance_regularizations r JOIN people_employees e ON r.employee_id = e.id`;
+    const params: any[] = [];
+
+    if (employeeId) {
+      query += ` WHERE r.employee_id = ?`;
+      params.push(employeeId);
+    }
+    query += ` ORDER BY r.created_at DESC LIMIT 100`;
+
+    const [rows] = await (db as any).execute(query, params);
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.patch("/attendance/regularization/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const { id } = req.params as { id: string };
+    const { status, reviewNote } = req.body as { status: string; reviewNote?: string };
+    if (!["approved", "rejected"].includes(status)) { res.status(400).json({ error: "Status must be approved or rejected" }); return; }
+
+    const [userRow] = await (db as any).execute(`SELECT employee_id FROM people_users WHERE clerk_id = ? OR id = ?`, [(req as any).auth?.userId ?? "", (req as any).user?.id ?? ""]);
+    const reviewerId = (req as any).user?.id ?? null;
+
+    await (db as any).execute(
+      `UPDATE people_attendance_regularizations SET status = ?, review_note = ?, reviewed_at = NOW() WHERE id = ?`,
+      [status, reviewNote ?? null, id]
+    );
+
+    // If approved, update attendance record
+    if (status === "approved") {
+      const [[reg]] = await (db as any).execute(`SELECT * FROM people_attendance_regularizations WHERE id = ?`, [id]);
+      if (reg) {
+        // Check if record exists
+        const [[existing]] = await (db as any).execute(
+          `SELECT id FROM people_attendance_records WHERE employee_id = ? AND date = ?`,
+          [reg.employee_id, reg.date]
+        );
+        if (existing) {
+          await (db as any).execute(
+            `UPDATE people_attendance_records SET clock_in = COALESCE(?, clock_in), clock_out = COALESCE(?, clock_out), updated_at = NOW() WHERE id = ?`,
+            [reg.requested_clock_in, reg.requested_clock_out, existing.id]
+          );
+        } else {
+          const newId = crypto.randomUUID();
+          await (db as any).execute(
+            `INSERT INTO people_attendance_records (id, employee_id, date, clock_in, clock_out, type, is_late, is_half_day) VALUES (?, ?, ?, ?, ?, 'wfo', 0, 0)`,
+            [newId, reg.employee_id, reg.date, reg.requested_clock_in, reg.requested_clock_out]
+          );
+        }
+      }
+    }
+
+    res.json({ id, status });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 export default router;

@@ -6,12 +6,13 @@ import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/utils";
-import { Search, Plus } from "lucide-react";
+import { Search, Plus, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -59,10 +60,70 @@ function AddHolidayDialog({ open, onClose }: { open: boolean; onClose: () => voi
   );
 }
 
+function RegularizationDialog({ open, onClose, date }: { open: boolean; onClose: () => void; date?: string }) {
+  const [form, setForm] = useState({ date: date ?? "", requestedClockIn: "", requestedClockOut: "", reason: "" });
+  const { data: user } = useCurrentUser();
+  const qc = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: (d: any) => fetchApi("/attendance/regularization", { method: "POST", body: JSON.stringify(d) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["regularization"] });
+      onClose();
+      toast.success("Regularization request submitted");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleSubmit = () => {
+    if (!form.date) { toast.error("Date is required"); return; }
+    if (!form.reason.trim()) { toast.error("Reason is required"); return; }
+    mutation.mutate({ ...form, employeeId: user?.employeeId });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogHeader><DialogTitle>Request Attendance Regularization</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <span>Use this to correct missed clock-in/clock-out entries. HR admin will review and approve.</span>
+          </div>
+          <div>
+            <Label>Date *</Label>
+            <Input type="date" max={new Date().toISOString().split("T")[0]} value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} className="mt-1" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Requested Clock In</Label>
+              <Input type="time" value={form.requestedClockIn} onChange={e => setForm(f => ({ ...f, requestedClockIn: e.target.value }))} className="mt-1" />
+            </div>
+            <div>
+              <Label>Requested Clock Out</Label>
+              <Input type="time" value={form.requestedClockOut} onChange={e => setForm(f => ({ ...f, requestedClockOut: e.target.value }))} className="mt-1" />
+            </div>
+          </div>
+          <div>
+            <Label>Reason *</Label>
+            <Textarea value={form.reason} onChange={e => setForm(f => ({ ...f, reason: e.target.value }))} className="mt-1" rows={3} placeholder="Explain why the regularization is needed..." />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSubmit} disabled={mutation.isPending}>{mutation.isPending ? "Submitting..." : "Submit Request"}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Attendance() {
   const [location, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [addHoliday, setAddHoliday] = useState(false);
+  const [regularizationOpen, setRegularizationOpen] = useState(false);
+  const [regularizationDate, setRegularizationDate] = useState<string | undefined>();
   const [month, setMonth] = useState(String(new Date().getMonth() + 1));
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [monthlySubTab, setMonthlySubTab] = useState(false);
@@ -241,7 +302,7 @@ export default function Attendance() {
 
         {/* ── MY ATTENDANCE ── */}
         <TabsContent value="my">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
             <Select value={month} onValueChange={setMonth}>
               <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -254,6 +315,9 @@ export default function Attendance() {
                 {YEARS.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Button size="sm" variant="outline" className="ml-auto" onClick={() => { setRegularizationDate(undefined); setRegularizationOpen(true); }}>
+              <Plus className="w-4 h-4 mr-1" /> Request Regularization
+            </Button>
           </div>
 
           {!user?.id ? (
@@ -286,13 +350,14 @@ export default function Attendance() {
                       <th className="text-left px-5 py-3">Clock Out</th>
                       <th className="text-left px-5 py-3">Hours</th>
                       <th className="text-left px-5 py-3">Late</th>
+                      <th className="text-left px-5 py-3">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {myLoading ? (
-                      <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
+                      <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
                     ) : (myAttendance?.records ?? []).length === 0 ? (
-                      <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">No attendance records for this month</td></tr>
+                      <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">No attendance records for this month</td></tr>
                     ) : (myAttendance?.records ?? []).map((r: any) => (
                       <tr key={r.id} className="border-b border-secondary hover:bg-background">
                         <td className="px-5 py-3 font-medium">{r.date}</td>
@@ -302,6 +367,11 @@ export default function Attendance() {
                         <td className="px-5 py-3 text-muted-foreground">{r.hoursWorked?.toFixed(1) ?? "—"}</td>
                         <td className="px-5 py-3">
                           {r.isLate ? <span className="text-xs text-red-500 font-medium">Late</span> : <span className="text-muted-foreground text-xs">—</span>}
+                        </td>
+                        <td className="px-5 py-3">
+                          <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={() => { setRegularizationDate(r.date); setRegularizationOpen(true); }}>
+                            Regularize
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -349,6 +419,7 @@ export default function Attendance() {
       </Tabs>
 
       <AddHolidayDialog open={addHoliday} onClose={() => setAddHoliday(false)} />
+      <RegularizationDialog open={regularizationOpen} onClose={() => setRegularizationOpen(false)} date={regularizationDate} />
     </PageContainer>
   );
 }

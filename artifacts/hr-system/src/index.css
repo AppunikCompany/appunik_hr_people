@@ -67,83 +67,91 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
-/* LIGHT MODE — strict near-black/blue/off-white palette */
+/* LIGHT MODE — Finesse UI Kit design tokens */
 :root {
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
-  --opaque-button-border-intensity: -8;
+  --opaque-button-border-intensity: -5;
   --elevate-1: rgba(0,0,0, .03);
-  --elevate-2: rgba(0,0,0, .08);
+  --elevate-2: rgba(0,0,0, .06);
 
-  /* #F9FAFB — off-white background */
-  --background: 210 20% 98%;
-  /* #111827 — near-black text */
-  --foreground: 221 39% 11%;
-  /* #E5E7EB */
-  --border: 220 13% 91%;
+  /* Finesse Grey/50 #FAFAFA */
+  --background: 0 0% 98%;
+  /* Finesse Grey/900 #24292E */
+  --foreground: 210 10% 16%;
+  /* Finesse Grey/200 #E5E7EA */
+  --border: 210 7% 90%;
 
-  /* #FFFFFF — white card */
+  /* White card */
   --card: 0 0% 100%;
-  --card-foreground: 221 39% 11%;
-  --card-border: 220 13% 91%;
+  --card-foreground: 210 10% 16%;
+  --card-border: 210 7% 90%;
 
-  /* Sidebar: white */
+  /* Sidebar: white, black active */
   --sidebar: 0 0% 100%;
-  --sidebar-foreground: 221 39% 11%;
-  --sidebar-border: 220 13% 91%;
-  /* #2563EB — blue accent */
-  --sidebar-primary: 221 83% 53%;
+  --sidebar-foreground: 210 10% 16%;
+  --sidebar-border: 210 7% 90%;
+  /* Black primary for active nav */
+  --sidebar-primary: 0 0% 0%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 214 100% 97%;
-  --sidebar-accent-foreground: 221 83% 53%;
-  --sidebar-ring: 221 83% 53%;
+  /* Finesse Grey/100 #F6F7F9 for hover */
+  --sidebar-accent: 220 7% 97%;
+  --sidebar-accent-foreground: 210 10% 16%;
+  --sidebar-ring: 0 0% 0%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 221 39% 11%;
-  --popover-border: 220 13% 91%;
+  --popover-foreground: 210 10% 16%;
+  --popover-border: 210 7% 90%;
 
-  /* #2563EB */
-  --primary: 221 83% 53%;
+  /* Primary: Finesse Black */
+  --primary: 0 0% 0%;
   --primary-foreground: 0 0% 100%;
 
-  /* #F3F4F6 */
-  --secondary: 220 14% 96%;
-  --secondary-foreground: 221 39% 11%;
+  /* Secondary: Finesse Grey/100 #F6F7F9 */
+  --secondary: 220 7% 97%;
+  --secondary-foreground: 210 10% 16%;
 
-  --muted: 220 14% 96%;
-  --muted-foreground: 220 9% 46%;
+  /* Muted: Finesse Grey/100 */
+  --muted: 220 7% 97%;
+  /* Muted text: Finesse Grey/500 #676E76 */
+  --muted-foreground: 210 6% 44%;
 
-  /* #EFF6FF */
-  --accent: 214 100% 97%;
-  --accent-foreground: 221 83% 53%;
+  /* Accent: Finesse Grey/50 for subtle highlights */
+  --accent: 0 0% 98%;
+  --accent-foreground: 210 10% 16%;
 
-  /* #DC2626 */
-  --destructive: 0 72% 51%;
+  /* Destructive: Finesse Error/600 #F34141 */
+  --destructive: 0 88% 60%;
   --destructive-foreground: 0 0% 100%;
 
-  --input: 220 13% 91%;
-  --ring: 221 83% 53%;
+  /* Input border: Finesse Grey/200 */
+  --input: 210 7% 90%;
+  /* Ring: black focus ring */
+  --ring: 0 0% 0%;
 
-  /* Charts */
-  --chart-1: 221 83% 53%;
-  --chart-2: 142 71% 45%;
-  --chart-3: 38 92% 50%;
-  --chart-4: 262 83% 58%;
-  --chart-5: 0 72% 51%;
+  /* Charts — keeping semantic colors from Finesse palette */
+  --chart-1: 210 6% 44%;
+  --chart-2: 153 42% 37%;
+  --chart-3: 35 83% 50%;
+  --chart-4: 0 88% 60%;
+  --chart-5: 210 10% 16%;
 
   --app-font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --app-font-serif: Georgia, serif;
-  --app-font-mono: Menlo, monospace;
-  --radius: .5rem;
+  --app-font-mono: 'Menlo', 'Monaco', 'Courier New', monospace;
 
-  --shadow-2xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.07);
-  --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.07), 0 1px 2px -1px rgb(0 0 0 / 0.07);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.07);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.07), 0 4px 6px -4px rgb(0 0 0 / 0.07);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.07), 0 8px 10px -6px rgb(0 0 0 / 0.07);
-  --shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.12);
+  /* Finesse uses 8px radius */
+  --radius: 0.5rem;
+
+  /* Finesse shadow: 0px 5px 15px rgba(0,0,0,0.12), 0px 15px 35px rgba(103,110,118,0.08) */
+  --shadow-2xs: 0 1px 3px 0 rgb(0 0 0 / 0.06);
+  --shadow-xs: 0 2px 4px 0 rgb(0 0 0 / 0.07);
+  --shadow-sm: 0 2px 6px 0 rgb(0 0 0 / 0.08), 0 1px 2px -1px rgb(0 0 0 / 0.06);
+  --shadow: 0 3px 8px 0 rgb(0 0 0 / 0.08), 0 1px 3px -1px rgb(0 0 0 / 0.06);
+  --shadow-md: 0 5px 15px 0 rgb(0 0 0 / 0.12), 0 3px 6px -2px rgb(103 110 118 / 0.08);
+  --shadow-lg: 0 5px 15px 0 rgb(0 0 0 / 0.12), 0 15px 35px 0 rgb(103 110 118 / 0.08);
+  --shadow-xl: 0 10px 25px 0 rgb(0 0 0 / 0.14), 0 20px 48px 0 rgb(103 110 118 / 0.10);
+  --shadow-2xl: 0 15px 40px 0 rgb(0 0 0 / 0.16), 0 30px 60px 0 rgb(103 110 118 / 0.12);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
 

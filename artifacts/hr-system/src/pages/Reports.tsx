@@ -6,11 +6,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LabelList } from "recharts";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
 
-const CHART_COLORS = ["#24292E", "#676E76", "#9CA3AF", "#D97706", "#31855e", "#F34141"];
+const CHART_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4", "#84CC16", "#F97316", "#6366F1"];
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const YEARS = [2024, 2025, 2026];
 
@@ -130,7 +130,12 @@ export default function Reports() {
                     <XAxis dataKey="department" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
                     <Tooltip cursor={{ fill: "transparent" }} />
-                    <Bar dataKey="count" fill="#24292E" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="count" radius={[3, 3, 0, 0]}>
+                      {(headcount?.byDepartment ?? []).map((_: unknown, index: number) => (
+                        <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                      ))}
+                      <LabelList dataKey="count" position="top" style={{ fontSize: 11, fontWeight: 600 }} />
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -140,8 +145,9 @@ export default function Reports() {
                   <PieChart>
                     <Pie
                       data={(headcount?.byEmploymentType ?? []).map((d: any) => ({ ...d, type: formatEnum(d.type) }))}
-                      dataKey="count" nameKey="type" cx="50%" cy="50%" outerRadius={90}
-                      label={({ name, percent }: { name: string; percent: number }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      dataKey="count" nameKey="type" cx="50%" cy="50%" outerRadius={80}
+                      labelLine={{ stroke: "#999", strokeWidth: 1 }}
+                      label={({ name, percent }: { name: string; percent: number }) => `${name}: ${(percent * 100).toFixed(0)}%`}
                     >
                       {(headcount?.byEmploymentType ?? []).map((_: unknown, index: number) => (
                         <Cell key={index} fill={CHART_COLORS[index % CHART_COLORS.length]} />
