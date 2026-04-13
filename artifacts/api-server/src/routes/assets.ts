@@ -83,6 +83,37 @@ router.post("/assets", requireAuth, requireRole("super_admin", "hr_admin", "it_a
   }
 });
 
+// ── BI-07: Asset inventory bulk export as CSV ──
+router.get("/assets/export", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (_req, res): Promise<void> => {
+  try {
+    const assets = await db.select().from(assetsTable);
+    const categories = await db.select().from(assetCategoriesTable);
+    const employees = await db.select().from(employeesTable);
+    const catMap = new Map(categories.map((c) => [c.id, c.name]));
+    const empMap = new Map(employees.map((e) => [e.id, `${e.firstName} ${e.lastName}`]));
+
+    const headers = ["Asset Code", "Name", "Category", "Serial Number", "Status", "Assigned To", "Purchase Date", "Purchase Cost", "Condition"];
+    const rows = assets.map((a) => [
+      a.assetCode,
+      a.name,
+      catMap.get(a.categoryId) ?? "",
+      a.serialNumber ?? "",
+      a.status,
+      a.assignedToId ? (empMap.get(a.assignedToId) ?? "") : "",
+      a.purchaseDate ?? "",
+      a.purchaseCost ?? "",
+      a.condition ?? "",
+    ].map((v) => `"${String(v).replace(/"/g, '""')}"`));
+
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", "attachment; filename=asset_inventory.csv");
+    res.send(csv);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 router.get("/assets/:id", requireAuth, async (req, res) => {
   try {
     const [asset] = await db.select().from(assetsTable).where(eq(assetsTable.id, (req.params.id as string)));
@@ -108,6 +139,13 @@ router.post("/assets/:id/assign", requireAuth, requireRole("super_admin", "hr_ad
   try {
     const { employeeId, notes } = req.body as { employeeId: string; notes?: string };
     const now = new Date();
+
+    const [existing] = await db.select().from(assetsTable).where(eq(assetsTable.id, (req.params.id as string)));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (existing.status === "assigned") {
+      res.status(400).json({ error: "Asset is already assigned. Return it before re-assigning." });
+      return;
+    }
 
     await db.update(assetsTable).set({ status: "assigned", assignedToId: employeeId, assignedAt: now }).where(eq(assetsTable.id, (req.params.id as string)));
     const [asset] = await db.select().from(assetsTable).where(eq(assetsTable.id, (req.params.id as string)));
@@ -268,37 +306,6 @@ router.post("/assets/import", requireAuth, requireRole("super_admin", "hr_admin"
     });
 
     res.json({ created, errors, results });
-  } catch (e) {
-    res.status(500).json({ error: String(e) });
-  }
-});
-
-// ── BI-07: Asset inventory bulk export as CSV ──
-router.get("/assets/export", requireAuth, requireRole("super_admin", "hr_admin", "it_admin"), async (_req, res): Promise<void> => {
-  try {
-    const assets = await db.select().from(assetsTable);
-    const categories = await db.select().from(assetCategoriesTable);
-    const employees = await db.select().from(employeesTable);
-    const catMap = new Map(categories.map((c) => [c.id, c.name]));
-    const empMap = new Map(employees.map((e) => [e.id, `${e.firstName} ${e.lastName}`]));
-
-    const headers = ["Asset Code", "Name", "Category", "Serial Number", "Status", "Assigned To", "Purchase Date", "Purchase Cost", "Condition"];
-    const rows = assets.map((a) => [
-      a.assetCode,
-      a.name,
-      catMap.get(a.categoryId) ?? "",
-      a.serialNumber ?? "",
-      a.status,
-      a.assignedToId ? (empMap.get(a.assignedToId) ?? "") : "",
-      a.purchaseDate ?? "",
-      a.purchaseCost ?? "",
-      a.condition ?? "",
-    ].map((v) => `"${String(v).replace(/"/g, '""')}"`));
-
-    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", "attachment; filename=asset_inventory.csv");
-    res.send(csv);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

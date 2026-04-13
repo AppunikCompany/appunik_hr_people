@@ -47,7 +47,7 @@ router.post("/automations/rules/:id/toggle", requireAuth, requireRole("super_adm
 
 router.get("/automations/logs", requireAuth, async (req, res) => {
   try {
-    const limit = parseInt((req.query.limit as string) ?? "50");
+    const limit = Math.min(200, Math.max(1, parseInt((req.query.limit as string) ?? "50") || 50));
     const logs = await db
       .select()
       .from(automationLogsTable)
@@ -146,7 +146,7 @@ const SEED_RULES = [
   { code: "rule_kra_reminder", name: "KRA Review Reminder", triggerType: "scheduled", triggerEvent: "kra.deadline_approaching", cronExpr: "0 9 * * 1", templateCode: "kra_review_reminder", recipients: "employee" },
   { code: "rule_new_emp_announcement", name: "New Employee Announcement", triggerType: "event", triggerEvent: "employee.created", cronExpr: null, templateCode: "new_employee_announcement", recipients: "hr_admin" },
   { code: "rule_exit", name: "Exit / Offboarding", triggerType: "event", triggerEvent: "employee.offboarding_started", cronExpr: null, templateCode: "exit_offboarding", recipients: "employee,hr_admin" },
-  { code: "rule_doc_expiry", name: "Document Expiry Alert", triggerType: "scheduled", triggerEvent: null, cronExpr: "0 9 * * *", templateCode: "document_expiry_alert", recipients: "employee" },
+  { code: "rule_doc_expiry", name: "Document Expiry Alert", triggerType: "event", triggerEvent: "employee.document_expiry", cronExpr: null, templateCode: "document_expiry_alert", recipients: "employee" },
 ];
 
 router.post("/automations/seed-templates", requireAuth, requireRole("super_admin", "hr_admin"), async (_req, res) => {
@@ -206,7 +206,7 @@ router.post("/automations/check-document-expiry", requireAuth, requireRole("supe
     let notified = 0;
     for (const doc of expiring) {
       await fireAutomationEvent({
-        event: "employee.created", // use generic event — the rule_doc_expiry matches by rule lookup below
+        event: "employee.document_expiry",
         employeeId: doc.employeeId,
         variables: { documentType: doc.documentType, expiryDate: doc.expiryDate! },
       });
@@ -315,7 +315,7 @@ router.post("/automations/holiday-announcement", requireAuth, requireRole("super
     let notified = 0;
     for (const emp of activeEmployees) {
       await fireAutomationEvent({
-        event: "employee.created", // generic — just to trigger email via template
+        event: "holiday.announcement",
         employeeId: emp.id,
         variables: { holidayList, monthName: new Date(nextMonthYear, nm - 1).toLocaleString("en", { month: "long" }) },
       });

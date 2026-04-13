@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useOnboardingChecklists, useEmployees, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -64,6 +64,13 @@ export default function Onboarding() {
   const [selectedChecklist, setSelectedChecklist] = useState<any>(null);
   const { data: checklists, isLoading } = useOnboardingChecklists();
   const qc = useQueryClient();
+
+  useEffect(() => {
+    if (selectedChecklist && checklists) {
+      const updated = (checklists as any[]).find((c: any) => c.id === selectedChecklist.id);
+      if (updated) setSelectedChecklist(updated);
+    }
+  }, [checklists]);
 
   const completeTask = useMutation({
     mutationFn: (taskId: string) => fetchApi(`/onboarding/tasks/${taskId}/complete`, { method: "POST", body: JSON.stringify({}) }),

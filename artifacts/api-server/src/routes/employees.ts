@@ -230,6 +230,29 @@ router.post("/employees/import", requireAuth, requireRole("super_admin", "hr_adm
 
 router.post("/employees", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
+    const { firstName, lastName, email, reportingManagerId } = req.body as {
+      firstName?: string; lastName?: string; email?: string; reportingManagerId?: string;
+    };
+
+    if (!firstName || !lastName || !email) {
+      res.status(400).json({ error: "First Name, Last Name, and Email are required" });
+      return;
+    }
+
+    const [existingEmail] = await db.select({ id: employeesTable.id }).from(employeesTable).where(eq(employeesTable.email, email));
+    if (existingEmail) {
+      res.status(409).json({ error: "An employee with this email already exists" });
+      return;
+    }
+
+    if (reportingManagerId) {
+      const [manager] = await db.select({ id: employeesTable.id }).from(employeesTable).where(eq(employeesTable.id, reportingManagerId));
+      if (!manager) {
+        res.status(400).json({ error: "Reporting manager not found" });
+        return;
+      }
+    }
+
     const code = await nextEmployeeCode();
     const newEmpId = crypto.randomUUID();
     await db.insert(employeesTable).values({ ...req.body, id: newEmpId, employeeCode: code });
@@ -294,8 +317,19 @@ router.get("/employees/:id/documents", requireAuth, async (req, res): Promise<vo
 
 router.post("/employees/:id/documents", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
+    const { id } = req.params as { id: string };
+    const { documentType, fileName, fileUrl, expiryDate } = req.body as {
+      documentType: string; fileName: string; fileUrl: string; expiryDate?: string;
+    };
+    if (!documentType || !fileName || !fileUrl) {
+      res.status(400).json({ error: "documentType, fileName, and fileUrl are required" });
+      return;
+    }
     const docId = crypto.randomUUID();
-    await db.insert(employeeDocumentsTable).values({ ...req.body, id: docId, employeeId: (req.params.id as string) });
+    await db.insert(employeeDocumentsTable).values({
+      id: docId, employeeId: id, documentType, fileName, fileUrl,
+      expiryDate: expiryDate || null,
+    });
     const [doc] = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.id, docId));
     res.status(201).json(doc);
   } catch (e) {

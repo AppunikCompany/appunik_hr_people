@@ -15,6 +15,20 @@ import { resolveEmployeeId } from "../lib/ownership";
 
 const router: IRouter = Router();
 
+function countBusinessDays(start: Date, end: Date): number {
+  let count = 0;
+  const cur = new Date(start);
+  cur.setHours(0, 0, 0, 0);
+  const endDay = new Date(end);
+  endDay.setHours(0, 0, 0, 0);
+  while (cur <= endDay) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
+
 router.get("/leave/types", requireAuth, async (_req, res) => {
   try {
     const types = await db.select().from(leaveTypesTable);
@@ -26,10 +40,53 @@ router.get("/leave/types", requireAuth, async (_req, res) => {
 
 router.post("/leave/types", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
+    const { name, maxDaysPerYear, isPaid, isPaidLeave, isCarryForward, description, code } = req.body as Record<string, any>;
+    if (!name || !name.trim()) { res.status(400).json({ error: "Leave type name is required" }); return; }
+    if (maxDaysPerYear === undefined || maxDaysPerYear === null || maxDaysPerYear === "") {
+      res.status(400).json({ error: "Max days per year is required" }); return;
+    }
+    // Auto-generate code from name if not provided
+    const resolvedCode = code || name.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
     const ltId = crypto.randomUUID();
-    await db.insert(leaveTypesTable).values({ ...req.body, id: ltId });
+    await db.insert(leaveTypesTable).values({
+      id: ltId,
+      name: name.trim(),
+      code: resolvedCode,
+      maxDaysPerYear: Number(maxDaysPerYear),
+      isPaidLeave: isPaidLeave ?? isPaid ?? true,
+      isCarryForward: isCarryForward ?? false,
+    });
     const [type] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, ltId));
     res.status(201).json(type);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.patch("/leave/types/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const { id } = req.params as { id: string };
+    const { name, maxDaysPerYear, isPaid, isPaidLeave, isCarryForward } = req.body as Record<string, any>;
+    const updateData: Record<string, any> = {};
+    if (name !== undefined) updateData.name = name;
+    if (maxDaysPerYear !== undefined) updateData.maxDaysPerYear = Number(maxDaysPerYear);
+    if (isPaidLeave !== undefined) updateData.isPaidLeave = isPaidLeave;
+    else if (isPaid !== undefined) updateData.isPaidLeave = isPaid;
+    if (isCarryForward !== undefined) updateData.isCarryForward = isCarryForward;
+    await db.update(leaveTypesTable).set(updateData).where(eq(leaveTypesTable.id, id));
+    const [type] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, id));
+    if (!type) { res.status(404).json({ error: "Leave type not found" }); return; }
+    res.json(type);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.delete("/leave/types/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const { id } = req.params as { id: string };
+    await db.delete(leaveTypesTable).where(eq(leaveTypesTable.id, id));
+    res.status(204).end();
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -115,6 +172,15 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
 
+    if (!startDate || !endDate || !leaveTypeId || !reason) {
+      res.status(400).json({ error: "leaveTypeId, startDate, endDate, and reason are required" });
+      return;
+    }
+    if (new Date(startDate) > new Date(endDate)) {
+      res.status(400).json({ error: "startDate must be on or before endDate" });
+      return;
+    }
+
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, leaveTypeId));
 
@@ -139,7 +205,7 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
       }
       // Max consecutive days
       if (policy.maxConsecutiveDays) {
-        const days = Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / 86400000) + 1;
+        const days = countBusinessDays(new Date(startDate), new Date(endDate));
         if (days > policy.maxConsecutiveDays) {
           res.status(400).json({ error: `${lt?.name ?? "This leave type"} allows max ${policy.maxConsecutiveDays} consecutive days` });
           return;
@@ -149,13 +215,13 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
 
     const start = new Date(startDate);
     const end = new Date(endDate);
-    const days = Math.ceil((end.getTime() - start.getTime()) / 86400000) + 1;
+    const days = countBusinessDays(start, end);
 
     // ── LV-05: Auto-detect LOP when balance is exhausted ──
     const year = new Date().getFullYear();
     const [bal] = await db.select().from(leaveBalancesTable)
       .where(and(eq(leaveBalancesTable.employeeId, employeeId), eq(leaveBalancesTable.leaveTypeId, leaveTypeId), eq(leaveBalancesTable.year, year)));
-    const isLop = !bal || (bal.balance - bal.used) < days;
+    const isLop = !!bal && (bal.balance - bal.used) < days;
     const effectiveStatus = isLop ? "lop" : "pending";
 
     const lrId = crypto.randomUUID();
@@ -183,10 +249,13 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
 router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
     const { comment } = req.body as { comment?: string };
-    await db.update(leaveRequestsTable).set({ status: "approved", managerComment: comment }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
-    const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
 
-    if (!request) { res.status(404).json({ error: "Not found" }); return; }
+    // LOP leaves stay as "lop" when approved — preserves LOP info for payroll and reports
+    const approvedStatus = existing.status === "lop" ? "lop" : "approved";
+    await db.update(leaveRequestsTable).set({ status: approvedStatus, managerComment: comment }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
 
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, request.employeeId));
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, request.leaveTypeId));

@@ -114,7 +114,7 @@ router.post("/attendance/wfh", requireAuth, async (req, res): Promise<void> => {
       // Notify manager
       const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
       if (emp?.reportingManagerId) {
-        fireAutomationEvent({ event: "employee.created", employeeId, variables: { eventType: "wfh_approval_request", date: today } }).catch(console.error);
+        fireAutomationEvent({ event: "attendance.wfh_requested", employeeId, variables: { date: today } }).catch(console.error);
       }
     }
 
@@ -217,8 +217,11 @@ router.get("/holidays", requireAuth, async (req, res) => {
 
 router.post("/holidays", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
+    const { name, date } = req.body as { name?: string; date?: string };
+    if (!name || !name.trim()) { res.status(400).json({ error: "Holiday name is required" }); return; }
+    if (!date || !date.trim()) { res.status(400).json({ error: "Holiday date is required" }); return; }
     const holId = crypto.randomUUID();
-    await db.insert(holidaysTable).values({ ...req.body, id: holId });
+    await db.insert(holidaysTable).values({ ...req.body, name: name.trim(), id: holId });
     const [holiday] = await db.select().from(holidaysTable).where(eq(holidaysTable.id, holId));
     res.status(201).json(holiday);
   } catch (e) {
