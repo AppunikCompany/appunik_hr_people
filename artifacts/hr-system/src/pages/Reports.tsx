@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation, useRoute } from "wouter";
 import { useHeadcountReport, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -31,6 +32,26 @@ function downloadCSV(data: string, filename: string) {
 }
 
 export default function Reports() {
+  const [location] = useLocation();
+  const tabFromPath: Record<string, string> = {
+    "/reports": "headcount",
+    "/reports/attendance": "attendance",
+    "/reports/attrition": "attrition",
+  };
+  const urlTab = tabFromPath[location];
+  const [localTab, setLocalTab] = useState(urlTab ?? "headcount");
+  const activeTab = urlTab ?? localTab;
+
+  const [, navigateTo] = useRoute("/:rest*");
+  const navigate = (path: string) => { window.history.pushState({}, "", path); window.dispatchEvent(new PopStateEvent("popstate")); };
+
+  const handleTabChange = (tab: string) => {
+    if (tab === "headcount") navigate("/reports");
+    else if (tab === "attendance") navigate("/reports/attendance");
+    else if (tab === "attrition") navigate("/reports/attrition");
+    else setLocalTab(tab);
+  };
+
   const [attMonth, setAttMonth] = useState(String(new Date().getMonth() + 1));
   const [attYear, setAttYear] = useState(String(new Date().getFullYear()));
 
@@ -81,7 +102,7 @@ export default function Reports() {
     <PageContainer>
       <PageHeader title="Reports & Analytics" breadcrumbs={[{ label: "Reports" }]} />
 
-      <Tabs defaultValue="headcount">
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <div className="mb-6">
           <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-medium">People</p>
           <TabsList className="mb-3 flex-wrap gap-1">
@@ -108,7 +129,7 @@ export default function Reports() {
                   <BarChart data={headcount?.byDepartment ?? []}>
                     <XAxis dataKey="department" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
+                    <Tooltip cursor={{ fill: "transparent" }} />
                     <Bar dataKey="count" fill="#24292E" radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -127,7 +148,7 @@ export default function Reports() {
                       ))}
                     </Pie>
                     <Legend formatter={(value: string) => formatEnum(value)} />
-                    <Tooltip formatter={(value: number | string, name: string) => [value, formatEnum(name)]} />
+                    <Tooltip cursor={{ fill: "transparent" }} formatter={(_: unknown, name: string) => [_, formatEnum(name)]} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -261,7 +282,7 @@ export default function Reports() {
                   <BarChart data={wfhRatio.byDepartment}>
                     <XAxis dataKey="department" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
-                    <Tooltip formatter={(v: number) => `${v}%`} />
+                    <Tooltip cursor={{ fill: "transparent" }} formatter={(v: number) => `${v}%`} />
                     <Bar dataKey="wfhPercent" fill="#24292E" radius={[3, 3, 0, 0]} name="WFH %" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -290,7 +311,7 @@ export default function Reports() {
                   <BarChart data={attrition.byQuarter}>
                     <XAxis dataKey="quarter" tickFormatter={(v) => `Q${v}`} tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip labelFormatter={(v) => `Q${v}`} />
+                    <Tooltip cursor={{ fill: "transparent" }} labelFormatter={(v) => `Q${v}`} />
                     <Bar dataKey="exits" fill="#F34141" radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -313,7 +334,7 @@ export default function Reports() {
                   <BarChart data={attrition.byDepartment ?? []}>
                     <XAxis dataKey="department" tick={{ fontSize: 11 }} />
                     <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
+                    <Tooltip cursor={{ fill: "transparent" }} />
                     <Bar dataKey="count" fill="#F34141" radius={[3, 3, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -352,7 +373,7 @@ export default function Reports() {
                       ))}
                     </Pie>
                     <Legend />
-                    <Tooltip />
+                    <Tooltip cursor={{ fill: "transparent" }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>
@@ -363,7 +384,7 @@ export default function Reports() {
                     <BarChart data={assetInventory.byCategory} layout="vertical">
                       <XAxis type="number" tick={{ fontSize: 11 }} />
                       <YAxis dataKey="category" type="category" tick={{ fontSize: 11 }} width={100} />
-                      <Tooltip />
+                      <Tooltip cursor={{ fill: "transparent" }} />
                       <Bar dataKey="count" fill="#24292E" radius={[0, 3, 3, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
@@ -394,7 +415,7 @@ export default function Reports() {
                       ))}
                     </Pie>
                     <Legend />
-                    <Tooltip />
+                    <Tooltip cursor={{ fill: "transparent" }} />
                   </PieChart>
                 </ResponsiveContainer>
               </div>

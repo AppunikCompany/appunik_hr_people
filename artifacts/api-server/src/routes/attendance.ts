@@ -217,8 +217,11 @@ router.get("/holidays", requireAuth, async (req, res) => {
 
 router.post("/holidays", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
+    const { name, date } = req.body as { name?: string; date?: string };
+    if (!name || !name.trim()) { res.status(400).json({ error: "Holiday name is required" }); return; }
+    if (!date || !date.trim()) { res.status(400).json({ error: "Holiday date is required" }); return; }
     const holId = crypto.randomUUID();
-    await db.insert(holidaysTable).values({ ...req.body, id: holId });
+    await db.insert(holidaysTable).values({ ...req.body, name: name.trim(), id: holId });
     const [holiday] = await db.select().from(holidaysTable).where(eq(holidaysTable.id, holId));
     res.status(201).json(holiday);
   } catch (e) {

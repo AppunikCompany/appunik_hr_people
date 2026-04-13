@@ -82,8 +82,10 @@ function AddAssetDialog({ open, onClose }: { open: boolean; onClose: () => void 
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => {
-              if (!form.name.trim()) { toast.error("Asset name is required"); return; }
-              if (!form.categoryId) { toast.error("Category is required"); return; }
+              const errors: string[] = [];
+              if (!form.name.trim()) errors.push("Asset name is required");
+              if (!form.categoryId) errors.push("Category is required");
+              if (errors.length > 0) { errors.forEach(e => toast.error(e)); return; }
               mutation.mutate(form);
             }}
             disabled={mutation.isPending}

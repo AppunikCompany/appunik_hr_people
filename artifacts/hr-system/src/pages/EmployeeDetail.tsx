@@ -1,12 +1,16 @@
-import { useRoute } from "wouter";
+import { useState } from "react";
+import { useRoute, useLocation } from "wouter";
 import { useEmployee, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDate } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiUrl } from "@/lib/utils";
+import { Edit2, Trash2, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 export default function EmployeeDetail() {
@@ -24,6 +28,33 @@ export default function EmployeeDetail() {
     enabled: !!id,
   });
 
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [, navigate] = useLocation();
+  const qc = useQueryClient();
+
+  const [addDocOpen, setAddDocOpen] = useState(false);
+  const [docForm, setDocForm] = useState({ documentType: "", fileName: "", fileUrl: "", expiryDate: "" });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: any) => fetchApi(`/employees/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee", id] }); setEditOpen(false); toast.success("Employee updated"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => fetchApi(`/employees/${id}`, { method: "DELETE" }),
+    onSuccess: () => { navigate("/employees"); toast.success("Employee deleted"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const addDocMutation = useMutation({
+    mutationFn: (data: any) => fetchApi(`/employees/${id}/documents`, { method: "POST", body: JSON.stringify(data) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-docs", id] }); setAddDocOpen(false); setDocForm({ documentType: "", fileName: "", fileUrl: "", expiryDate: "" }); toast.success("Document added"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   if (isLoading) return <PageContainer><div className="text-center py-20 text-muted-foreground">Loading...</div></PageContainer>;
   if (!emp) return <PageContainer><div className="text-center py-20 text-muted-foreground">Employee not found</div></PageContainer>;
 
@@ -36,7 +67,17 @@ export default function EmployeeDetail() {
           { label: "Employees", href: "/employees" },
           { label: `${emp.firstName} ${emp.lastName}` },
         ]}
-        actions={<StatusBadge status={emp.status} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <StatusBadge status={emp.status} />
+            <Button size="sm" variant="outline" onClick={() => { setEditForm({ firstName: emp.firstName, lastName: emp.lastName, email: emp.email, phone: emp.phone ?? "", joiningDate: emp.joiningDate, employmentType: emp.employmentType, status: emp.status, departmentId: emp.departmentId ?? "", designationId: emp.designationId ?? "" }); setEditOpen(true); }}>
+              <Edit2 className="w-3.5 h-3.5 mr-1" /> Edit
+            </Button>
+            <Button size="sm" variant="destructive" onClick={() => setDeleteOpen(true)}>
+              <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
+            </Button>
+          </div>
+        }
       />
 
       <Tabs defaultValue="profile">
@@ -79,6 +120,10 @@ export default function EmployeeDetail() {
 
         <TabsContent value="documents">
           <div className="bg-white border border-border rounded-lg shadow-sm">
+            <div className="flex justify-between items-center px-5 py-3 border-b border-border">
+              <h3 className="text-sm font-semibold">Documents</h3>
+              <Button size="sm" onClick={() => setAddDocOpen(true)}><Plus className="w-4 h-4 mr-1" /> Add Document</Button>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -137,6 +182,58 @@ export default function EmployeeDetail() {
           </div>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-lg" onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>Edit Employee</DialogTitle></DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-2">
+            <div><Label>First Name *</Label><Input value={editForm.firstName ?? ""} onChange={e => setEditForm((f: any) => ({ ...f, firstName: e.target.value }))} className="mt-1" /></div>
+            <div><Label>Last Name *</Label><Input value={editForm.lastName ?? ""} onChange={e => setEditForm((f: any) => ({ ...f, lastName: e.target.value }))} className="mt-1" /></div>
+            <div className="col-span-2"><Label>Email *</Label><Input value={editForm.email ?? ""} onChange={e => setEditForm((f: any) => ({ ...f, email: e.target.value }))} className="mt-1" /></div>
+            <div className="col-span-2"><Label>Phone</Label><Input value={editForm.phone ?? ""} onChange={e => setEditForm((f: any) => ({ ...f, phone: e.target.value }))} className="mt-1" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={() => { if (!editForm.firstName || !editForm.lastName || !editForm.email) { toast.error("Name and email are required"); return; } updateMutation.mutate(editForm); }} disabled={updateMutation.isPending}>
+              {updateMutation.isPending ? "Saving..." : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Delete Employee</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">Are you sure you want to delete <strong>{emp.firstName} {emp.lastName}</strong>? This action cannot be undone.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteMutation.mutate()} disabled={deleteMutation.isPending}>
+              {deleteMutation.isPending ? "Deleting..." : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Document Dialog */}
+      <Dialog open={addDocOpen} onOpenChange={setAddDocOpen}>
+        <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>Add Document</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div><Label>Document Type *</Label><Input value={docForm.documentType} onChange={e => setDocForm(f => ({ ...f, documentType: e.target.value }))} className="mt-1" placeholder="e.g. Aadhar Card, PAN Card..." /></div>
+            <div><Label>File Name *</Label><Input value={docForm.fileName} onChange={e => setDocForm(f => ({ ...f, fileName: e.target.value }))} className="mt-1" placeholder="e.g. aadhar_card.pdf" /></div>
+            <div><Label>File URL *</Label><Input value={docForm.fileUrl} onChange={e => setDocForm(f => ({ ...f, fileUrl: e.target.value }))} className="mt-1" placeholder="https://..." /></div>
+            <div><Label>Expiry Date</Label><Input type="date" max="9999-12-31" value={docForm.expiryDate} onChange={e => setDocForm(f => ({ ...f, expiryDate: e.target.value }))} className="mt-1" /></div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDocOpen(false)}>Cancel</Button>
+            <Button onClick={() => { if (!docForm.documentType || !docForm.fileName || !docForm.fileUrl) { toast.error("Document type, name, and URL are required"); return; } addDocMutation.mutate({ ...docForm, expiryDate: docForm.expiryDate || null }); }} disabled={addDocMutation.isPending}>
+              {addDocMutation.isPending ? "Adding..." : "Add Document"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageContainer>
   );
 }

@@ -50,7 +50,16 @@ function CreateCycleDialog({ open, onClose }: { open: boolean; onClose: () => vo
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={mutation.isPending}>{mutation.isPending ? "Creating..." : "Create"}</Button>
+          <Button
+            onClick={() => {
+              if (!form.name.trim()) { toast.error("Cycle name is required"); return; }
+              if (!form.startDate) { toast.error("Start date is required"); return; }
+              if (!form.endDate) { toast.error("End date is required"); return; }
+              if (new Date(form.endDate) < new Date(form.startDate)) { toast.error("End date must be after start date"); return; }
+              mutation.mutate({ ...form, name: form.name.trim() });
+            }}
+            disabled={mutation.isPending}
+          >{mutation.isPending ? "Creating..." : "Create"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

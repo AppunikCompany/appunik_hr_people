@@ -40,8 +40,22 @@ router.get("/leave/types", requireAuth, async (_req, res) => {
 
 router.post("/leave/types", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
+    const { name, maxDaysPerYear, isPaid, isPaidLeave, isCarryForward, description, code } = req.body as Record<string, any>;
+    if (!name || !name.trim()) { res.status(400).json({ error: "Leave type name is required" }); return; }
+    if (maxDaysPerYear === undefined || maxDaysPerYear === null || maxDaysPerYear === "") {
+      res.status(400).json({ error: "Max days per year is required" }); return;
+    }
+    // Auto-generate code from name if not provided
+    const resolvedCode = code || name.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
     const ltId = crypto.randomUUID();
-    await db.insert(leaveTypesTable).values({ ...req.body, id: ltId });
+    await db.insert(leaveTypesTable).values({
+      id: ltId,
+      name: name.trim(),
+      code: resolvedCode,
+      maxDaysPerYear: Number(maxDaysPerYear),
+      isPaidLeave: isPaidLeave ?? isPaid ?? true,
+      isCarryForward: isCarryForward ?? false,
+    });
     const [type] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, ltId));
     res.status(201).json(type);
   } catch (e) {
@@ -52,7 +66,14 @@ router.post("/leave/types", requireAuth, requireRole("super_admin", "hr_admin"),
 router.patch("/leave/types/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const { id } = req.params as { id: string };
-    await db.update(leaveTypesTable).set(req.body).where(eq(leaveTypesTable.id, id));
+    const { name, maxDaysPerYear, isPaid, isPaidLeave, isCarryForward } = req.body as Record<string, any>;
+    const updateData: Record<string, any> = {};
+    if (name !== undefined) updateData.name = name;
+    if (maxDaysPerYear !== undefined) updateData.maxDaysPerYear = Number(maxDaysPerYear);
+    if (isPaidLeave !== undefined) updateData.isPaidLeave = isPaidLeave;
+    else if (isPaid !== undefined) updateData.isPaidLeave = isPaid;
+    if (isCarryForward !== undefined) updateData.isCarryForward = isCarryForward;
+    await db.update(leaveTypesTable).set(updateData).where(eq(leaveTypesTable.id, id));
     const [type] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, id));
     if (!type) { res.status(404).json({ error: "Leave type not found" }); return; }
     res.json(type);

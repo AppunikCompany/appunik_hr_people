@@ -55,8 +55,12 @@ router.get("/kra/review-cycles", requireAuth, async (_req, res) => {
 
 router.post("/kra/review-cycles", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
+    const { name, startDate, endDate } = req.body as { name?: string; startDate?: string; endDate?: string };
+    if (!name || !name.trim()) { res.status(400).json({ error: "Review cycle name is required" }); return; }
+    if (!startDate) { res.status(400).json({ error: "Start date is required" }); return; }
+    if (!endDate) { res.status(400).json({ error: "End date is required" }); return; }
     const cycleId = crypto.randomUUID();
-    await db.insert(reviewCyclesTable).values({ ...req.body, id: cycleId });
+    await db.insert(reviewCyclesTable).values({ ...req.body, name: name.trim(), id: cycleId });
     const [cycle] = await db.select().from(reviewCyclesTable).where(eq(reviewCyclesTable.id, cycleId));
     res.status(201).json(cycle);
   } catch (e) {

@@ -43,7 +43,6 @@ type Employee = {
   joiningDate: string;
   employmentType: string;
   status: string;
-  zktecoMemberId: number | null;
 };
 
 type EmployeeForm = {
@@ -56,7 +55,6 @@ type EmployeeForm = {
   joiningDate: string;
   employmentType: string;
   status: string;
-  zktecoMemberId: string; // MEM 1, MEM 2… biometric device enrollment number
 };
 
 function EmployeeFormDialog({
@@ -81,22 +79,16 @@ function EmployeeFormDialog({
     joiningDate: initial?.joiningDate ?? new Date().toISOString().split("T")[0],
     employmentType: initial?.employmentType ?? "full_time",
     status: initial?.status ?? "active",
-    zktecoMemberId: initial?.zktecoMemberId ?? "",
   });
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
   const qc = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (data: EmployeeForm) => {
-      const payload = {
-        ...data,
-        zktecoMemberId: data.zktecoMemberId ? parseInt(data.zktecoMemberId, 10) : null,
-      };
-      return isEdit
-        ? fetchApi(`/employees/${employeeId}`, { method: "PATCH", body: JSON.stringify(payload) })
-        : fetchApi("/employees", { method: "POST", body: JSON.stringify(payload) });
-    },
+    mutationFn: (data: EmployeeForm) =>
+      isEdit
+        ? fetchApi(`/employees/${employeeId}`, { method: "PATCH", body: JSON.stringify(data) })
+        : fetchApi("/employees", { method: "POST", body: JSON.stringify(data) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["employees"] });
       onClose();
@@ -177,26 +169,21 @@ function EmployeeFormDialog({
               </SelectContent>
             </Select>
           </div>
-          <div>
-            <Label>Biometric Member ID</Label>
-            <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-medium pointer-events-none">MEM</span>
-              <Input
-                type="number"
-                min="1"
-                max="9999"
-                value={form.zktecoMemberId}
-                onChange={(e) => set("zktecoMemberId", e.target.value)}
-                className="pl-11"
-                placeholder="e.g. 1"
-              />
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">Enrollment number on the biometric attendance device</p>
-          </div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={mutation.isPending}>
+          <Button
+            onClick={() => {
+              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              if (!form.firstName.trim()) { toast.error("First name is required"); return; }
+              if (!form.lastName.trim()) { toast.error("Last name is required"); return; }
+              if (!form.email.trim()) { toast.error("Email is required"); return; }
+              if (!emailRegex.test(form.email.trim())) { toast.error("Invalid email format"); return; }
+              if (!form.joiningDate) { toast.error("Joining date is required"); return; }
+              mutation.mutate({ ...form, email: form.email.trim() });
+            }}
+            disabled={mutation.isPending}
+          >
             {mutation.isPending ? (isEdit ? "Saving..." : "Adding...") : (isEdit ? "Save Changes" : "Add Employee")}
           </Button>
         </DialogFooter>
@@ -302,7 +289,7 @@ export default function Employees() {
   const { data: employees, isLoading } = useEmployees();
   const { data: depts } = useDepartments();
 
-  const filtered = ((employees as any[]) ?? [] as Employee[]).filter((emp: Employee) => {
+  const filtered = (employees as Employee[] ?? []).filter((emp) => {
     const q = search.toLowerCase();
     const matchSearch =
       !search ||
@@ -330,7 +317,7 @@ export default function Employees() {
       />
 
       {showOrgChart ? (
-        <OrgChart employees={((employees as any[]) ?? []) as Employee[]} />
+        <OrgChart employees={employees as Employee[] ?? []} />
       ) : (
       <div className="bg-white border border-border rounded-lg shadow-sm">
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border">
@@ -430,7 +417,7 @@ export default function Employees() {
         </div>
 
         <div className="px-5 py-3 border-t border-border text-xs text-muted-foreground">
-          Showing {filtered.length} of {((employees as any[]) ?? []).length} employees
+          Showing {filtered.length} of {(employees as Employee[] ?? []).length} employees
         </div>
       </div>
       )}
@@ -456,7 +443,6 @@ export default function Employees() {
             joiningDate: editEmployee.joiningDate,
             employmentType: editEmployee.employmentType,
             status: editEmployee.status,
-            zktecoMemberId: editEmployee.zktecoMemberId ? String(editEmployee.zktecoMemberId) : "",
           }}
         />
       )}

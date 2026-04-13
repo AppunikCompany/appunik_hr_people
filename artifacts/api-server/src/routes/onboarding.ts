@@ -62,6 +62,17 @@ router.post("/onboarding/checklists", requireAuth, requireRole("super_admin", "h
       employeeId: string;
       tasks?: Array<{ title: string; assignedTo: string; assignedRole: string; dueDate?: string }>;
     };
+
+    // Check for duplicate: if a checklist already exists for this employee, return 409
+    const existing = await db
+      .select()
+      .from(onboardingChecklistsTable)
+      .where(eq(onboardingChecklistsTable.employeeId, employeeId));
+    if (existing.length > 0) {
+      res.status(409).json({ error: "An onboarding checklist already exists for this employee" });
+      return;
+    }
+
     const clId = crypto.randomUUID();
     await db.insert(onboardingChecklistsTable).values({ id: clId, employeeId });
     const [checklist] = await db.select().from(onboardingChecklistsTable).where(eq(onboardingChecklistsTable.id, clId));

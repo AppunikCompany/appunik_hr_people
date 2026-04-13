@@ -77,7 +77,7 @@ function LeavePolicyDialog({ policy, open, onClose }: { policy?: any; open: bool
   const [form, setForm] = useState({
     name: policy?.name ?? "",
     maxDaysPerYear: String(policy?.maxDaysPerYear ?? ""),
-    isPaid: policy?.isPaid ?? true,
+    isPaidLeave: policy?.isPaidLeave ?? policy?.isPaid ?? true,
     isCarryForward: policy?.isCarryForward ?? false,
     description: policy?.description ?? "",
   });
@@ -88,9 +88,8 @@ function LeavePolicyDialog({ policy, open, onClose }: { policy?: any; open: bool
       const body = {
         name: form.name,
         maxDaysPerYear: Number(form.maxDaysPerYear),
-        isPaid: form.isPaid,
+        isPaidLeave: form.isPaidLeave,
         isCarryForward: form.isCarryForward,
-        description: form.description || null,
       };
       return isEdit
         ? fetchApi(`/leave/types/${policy.id}`, { method: "PATCH", body: JSON.stringify(body) })
@@ -107,7 +106,7 @@ function LeavePolicyDialog({ policy, open, onClose }: { policy?: any; open: bool
         <div className="space-y-4 py-2">
           <div><Label>Name *</Label><Input value={form.name} onChange={e => set("name", e.target.value)} className="mt-1" placeholder="e.g. Casual Leave" /></div>
           <div><Label>Max Days Per Year *</Label><Input type="number" min="0" value={form.maxDaysPerYear} onChange={e => set("maxDaysPerYear", e.target.value)} className="mt-1" /></div>
-          <div className="flex items-center justify-between"><Label>Paid Leave</Label><Switch checked={form.isPaid} onCheckedChange={v => set("isPaid", v)} /></div>
+          <div className="flex items-center justify-between"><Label>Paid Leave</Label><Switch checked={form.isPaidLeave} onCheckedChange={v => set("isPaidLeave", v)} /></div>
           <div className="flex items-center justify-between"><Label>Carry Forward</Label><Switch checked={form.isCarryForward} onCheckedChange={v => set("isCarryForward", v)} /></div>
           <div><Label>Description</Label><Input value={form.description} onChange={e => set("description", e.target.value)} className="mt-1" /></div>
         </div>
@@ -172,8 +171,8 @@ function RoleDialog({ role, open, onClose }: { role?: Role; open: boolean; onClo
           body: JSON.stringify({ name, description: description || null, permissions: permArray }),
         });
       }
-      await fetchApi(`/admin/roles/${role!.id}`, { method: "PATCH", body: JSON.stringify({ name, description: description || null }) });
-      return fetchApi(`/admin/roles/${role!.id}/permissions`, { method: "PUT", body: JSON.stringify(permArray) });
+      await fetchApi(`/admin/roles/${role.id}`, { method: "PATCH", body: JSON.stringify({ name, description: description || null }) });
+      await fetchApi(`/admin/roles/${role.id}/permissions`, { method: "PUT", body: JSON.stringify(permArray) });
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["roles"] });
@@ -211,12 +210,12 @@ function RoleDialog({ role, open, onClose }: { role?: Role; open: boolean; onClo
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Role Name</p>
-                <p className="text-sm font-semibold capitalize">{role!.name.replace(/_/g, " ")}</p>
+                <p className="text-sm font-semibold capitalize">{role.name.replace(/_/g, " ")}</p>
               </div>
-              {role!.description && (
+              {role.description && (
                 <div>
                   <p className="text-xs text-muted-foreground mb-1">Description</p>
-                  <p className="text-sm">{role!.description}</p>
+                  <p className="text-sm">{role.description}</p>
                 </div>
               )}
             </div>
@@ -233,7 +232,7 @@ function RoleDialog({ role, open, onClose }: { role?: Role; open: boolean; onClo
                 </thead>
                 <tbody>
                   {MODULES.map((m, i) => {
-                    const p = role!.permissions.find(x => x.module === m.key);
+                    const p = role.permissions.find(x => x.module === m.key);
                     return (
                       <tr key={m.key} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
                         <td className="px-4 py-2.5 font-medium">{m.label}</td>
@@ -541,7 +540,7 @@ export default function Settings() {
                       <td className="px-5 py-3 font-medium">{lt.name}</td>
                       <td className="px-5 py-3 text-center">{lt.maxDaysPerYear}</td>
                       <td className="px-5 py-3 text-center">
-                        <span className={`text-xs font-medium ${lt.isPaid ? "text-foreground" : "text-muted-foreground"}`}>{lt.isPaid ? "Yes" : "No"}</span>
+                        <span className={`text-xs font-medium ${(lt.isPaidLeave ?? lt.isPaid) ? "text-foreground" : "text-muted-foreground"}`}>{(lt.isPaidLeave ?? lt.isPaid) ? "Yes" : "No"}</span>
                       </td>
                       <td className="px-5 py-3 text-center">
                         <span className={`text-xs font-medium ${lt.isCarryForward ? "text-foreground" : "text-muted-foreground"}`}>{lt.isCarryForward ? "Yes" : "No"}</span>
@@ -577,7 +576,7 @@ export default function Settings() {
                 <div key={n.id} className="flex items-center justify-between px-5 py-4">
                   <div>
                     <p className="text-sm font-medium text-foreground">{n.label}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{n.channel} notification</p>
+                    <p className="text-xs text-muted-foreground capitalize">Email notification</p>
                   </div>
                   <Switch
                     checked={n.isEnabled}
