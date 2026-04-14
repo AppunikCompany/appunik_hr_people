@@ -171,11 +171,6 @@ export default function Attendance() {
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="mb-6">
-          <TabsTrigger value="daily">Daily View</TabsTrigger>
-          <TabsTrigger value="my">My Attendance</TabsTrigger>
-          <TabsTrigger value="holidays">Holidays</TabsTrigger>
-        </TabsList>
 
         {/* ── DAILY VIEW with Monthly View toggle ── */}
         <TabsContent value="daily">

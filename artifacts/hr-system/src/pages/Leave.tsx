@@ -305,12 +305,6 @@ export default function Leave() {
       />
 
       <Tabs value={activeTab}>
-        <TabsList className="mb-6">
-          <TabsTrigger value="requests" asChild><a href="/leave">Leave Requests</a></TabsTrigger>
-          <TabsTrigger value="calendar" asChild><a href="/leave/calendar">Leave Calendar</a></TabsTrigger>
-          <TabsTrigger value="balances" asChild><a href="/leave/balances">Leave Balances</a></TabsTrigger>
-          <TabsTrigger value="compoff" asChild><a href="/leave/compoff">Comp-Off</a></TabsTrigger>
-        </TabsList>
 
         <TabsContent value="requests">
           <div className="bg-white border border-border rounded-lg shadow-sm">

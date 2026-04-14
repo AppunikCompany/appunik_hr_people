@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation, useRoute } from "wouter";
+import { useLocation } from "wouter";
 import { useHeadcountReport, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -36,21 +36,12 @@ export default function Reports() {
   const tabFromPath: Record<string, string> = {
     "/reports": "headcount",
     "/reports/attendance": "attendance",
+    "/reports/wfh": "wfh",
     "/reports/attrition": "attrition",
+    "/reports/assets": "assets",
+    "/reports/kra": "kra",
   };
-  const urlTab = tabFromPath[location];
-  const [localTab, setLocalTab] = useState(urlTab ?? "headcount");
-  const activeTab = urlTab ?? localTab;
-
-  const [, navigateTo] = useRoute("/:rest*");
-  const navigate = (path: string) => { window.history.pushState({}, "", path); window.dispatchEvent(new PopStateEvent("popstate")); };
-
-  const handleTabChange = (tab: string) => {
-    if (tab === "headcount") navigate("/reports");
-    else if (tab === "attendance") navigate("/reports/attendance");
-    else if (tab === "attrition") navigate("/reports/attrition");
-    else setLocalTab(tab);
-  };
+  const activeTab = tabFromPath[location] ?? "headcount";
 
   const [attMonth, setAttMonth] = useState(String(new Date().getMonth() + 1));
   const [attYear, setAttYear] = useState(String(new Date().getFullYear()));
@@ -102,21 +93,7 @@ export default function Reports() {
     <PageContainer>
       <PageHeader title="Reports & Analytics" breadcrumbs={[{ label: "Reports" }]} />
 
-      <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <div className="mb-6">
-          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-medium">People</p>
-          <TabsList className="mb-3 flex-wrap gap-1">
-            <TabsTrigger value="headcount">Headcount</TabsTrigger>
-            <TabsTrigger value="attendance">Attendance</TabsTrigger>
-            <TabsTrigger value="wfh">WFH / WFO</TabsTrigger>
-            <TabsTrigger value="attrition">Attrition</TabsTrigger>
-          </TabsList>
-          <p className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-medium">Performance & Assets</p>
-          <TabsList className="flex-wrap gap-1">
-            <TabsTrigger value="assets">Asset Inventory</TabsTrigger>
-            <TabsTrigger value="kra">KRA Performance</TabsTrigger>
-          </TabsList>
-        </div>
+      <Tabs value={activeTab}>
 
         <TabsContent value="headcount">
           {hcLoading ? (

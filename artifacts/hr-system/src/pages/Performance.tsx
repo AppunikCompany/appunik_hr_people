@@ -136,11 +136,6 @@ export default function Performance() {
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
-        <TabsList className="mb-6">
-          <TabsTrigger value="assignments">KRA Assignments</TabsTrigger>
-          <TabsTrigger value="cycles">Review Cycles</TabsTrigger>
-          <TabsTrigger value="templates">Templates</TabsTrigger>
-        </TabsList>
 
         <TabsContent value="assignments">
           <div className="bg-white border border-border rounded-lg shadow-sm">

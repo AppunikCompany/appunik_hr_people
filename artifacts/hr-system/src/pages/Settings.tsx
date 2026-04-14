@@ -410,16 +410,6 @@ export default function Settings() {
       <PageHeader title="Settings" breadcrumbs={[{ label: "Settings" }]} />
 
       <Tabs value={activeTab}>
-        <TabsList className="mb-6 flex-wrap">
-          <TabsTrigger value="company" asChild><a href="/settings">Company Profile</a></TabsTrigger>
-          <TabsTrigger value="departments" asChild><a href="/settings/departments">Departments</a></TabsTrigger>
-          <TabsTrigger value="designations" asChild><a href="/settings/designations">Designations</a></TabsTrigger>
-          <TabsTrigger value="leave-policies" asChild><a href="/settings/leave-policies">Leave Policies</a></TabsTrigger>
-          <TabsTrigger value="notifications" asChild><a href="/settings/notifications">Notifications</a></TabsTrigger>
-          {isSuperAdmin && (
-            <TabsTrigger value="roles" asChild><a href="/settings/roles">Roles</a></TabsTrigger>
-          )}
-        </TabsList>
 
         {/* Company Profile */}
         <TabsContent value="company">

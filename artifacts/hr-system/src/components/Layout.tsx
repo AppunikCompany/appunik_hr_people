@@ -109,7 +109,10 @@ const ALL_NAV_ITEMS: NavItem[] = [
     children: [
       { label: "Headcount", href: "/reports" },
       { label: "Attendance", href: "/reports/attendance" },
+      { label: "WFH / WFO", href: "/reports/wfh" },
       { label: "Attrition", href: "/reports/attrition" },
+      { label: "Asset Inventory", href: "/reports/assets" },
+      { label: "KRA Performance", href: "/reports/kra" },
     ],
   },
   {
@@ -144,6 +147,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
       { label: "Designations", href: "/settings/designations" },
       { label: "Leave Policies", href: "/settings/leave-policies" },
       { label: "Notifications", href: "/settings/notifications" },
+      { label: "Roles", href: "/settings/roles" },
     ],
   },
 ];
