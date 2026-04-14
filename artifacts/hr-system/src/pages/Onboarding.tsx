@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { formatDate } from "@/lib/utils";
-import { Plus, CheckCircle, Circle } from "lucide-react";
+import { Plus, CheckCircle, Circle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const DEFAULT_TASKS = [
@@ -65,6 +65,16 @@ export default function Onboarding() {
   const { data: checklists, isLoading } = useOnboardingChecklists();
   const qc = useQueryClient();
 
+  const deleteChecklist = useMutation({
+    mutationFn: (id: string) => fetchApi(`/onboarding/checklists/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["onboarding"] });
+      setSelectedChecklist(null);
+      toast.success("Checklist deleted");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   useEffect(() => {
     if (selectedChecklist && checklists) {
       const updated = (checklists as any[]).find((c: any) => c.id === selectedChecklist.id);
@@ -98,8 +108,24 @@ export default function Onboarding() {
               onClick={() => setSelectedChecklist(cl)}
               className={`bg-white border rounded-lg p-4 cursor-pointer shadow-sm hover:border-primary transition-colors ${selectedChecklist?.id === cl.id ? "border-primary" : "border-border"}`}
             >
-              <p className="font-medium text-foreground">{cl.employeeName}</p>
-              <p className="text-xs text-muted-foreground mt-1">{formatDate(cl.createdAt)}</p>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-foreground truncate">{cl.employeeName}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{formatDate(cl.createdAt)}</p>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (confirm(`Delete onboarding checklist for ${cl.employeeName}?`)) {
+                      deleteChecklist.mutate(cl.id);
+                    }
+                  }}
+                  className="flex-shrink-0 text-muted-foreground hover:text-red-500 transition-colors p-0.5"
+                  title="Delete checklist"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
               <div className="mt-3 flex items-center gap-2">
                 <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
                   <div

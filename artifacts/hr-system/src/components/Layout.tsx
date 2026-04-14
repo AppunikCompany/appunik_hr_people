@@ -20,6 +20,7 @@ import {
   Building2,
   ChevronDown,
   LayoutDashboard,
+  FileText,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -116,6 +117,11 @@ const ALL_NAV_ITEMS: NavItem[] = [
       { label: "Email Templates", href: "/automations/templates" },
       { label: "Logs", href: "/automations/logs" },
     ],
+  },
+  {
+    label: "Letters",
+    href: "/letters",
+    icon: FileText,
   },
   {
     label: "Self-Service",

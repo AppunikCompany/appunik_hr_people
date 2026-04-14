@@ -18,6 +18,7 @@ import Automations from "@/pages/Automations";
 import Settings from "@/pages/Settings";
 import SelfService from "@/pages/SelfService";
 import Profile from "@/pages/Profile";
+import Letters from "@/pages/Letters";
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
@@ -85,6 +86,7 @@ function Router() {
         <Route path="/settings/leave-policies" component={Settings} />
         <Route path="/settings/notifications" component={Settings} />
         <Route path="/settings/roles" component={Settings} />
+        <Route path="/letters" component={Letters} />
         <Route path="/self-service" component={SelfService} />
         <Route path="/profile" component={Profile} />
         <Route component={NotFound} />
