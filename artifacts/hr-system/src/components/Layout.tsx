@@ -20,6 +20,7 @@ import {
   Building2,
   ChevronDown,
   LayoutDashboard,
+  FileText,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -39,6 +40,11 @@ interface NavItem {
 }
 
 const ALL_NAV_ITEMS: NavItem[] = [
+  {
+    label: "Dashboard",
+    href: "/",
+    icon: LayoutDashboard,
+  },
   {
     label: "Employees",
     href: "/employees",
@@ -103,7 +109,10 @@ const ALL_NAV_ITEMS: NavItem[] = [
     children: [
       { label: "Headcount", href: "/reports" },
       { label: "Attendance", href: "/reports/attendance" },
+      { label: "WFH / WFO", href: "/reports/wfh" },
       { label: "Attrition", href: "/reports/attrition" },
+      { label: "Asset Inventory", href: "/reports/assets" },
+      { label: "KRA Performance", href: "/reports/kra" },
     ],
   },
   {
@@ -116,6 +125,11 @@ const ALL_NAV_ITEMS: NavItem[] = [
       { label: "Email Templates", href: "/automations/templates" },
       { label: "Logs", href: "/automations/logs" },
     ],
+  },
+  {
+    label: "Letters",
+    href: "/letters",
+    icon: FileText,
   },
   {
     label: "Self-Service",
@@ -133,15 +147,20 @@ const ALL_NAV_ITEMS: NavItem[] = [
       { label: "Designations", href: "/settings/designations" },
       { label: "Leave Policies", href: "/settings/leave-policies" },
       { label: "Notifications", href: "/settings/notifications" },
+      { label: "Roles", href: "/settings/roles" },
     ],
   },
 ];
 
 function NavItemRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
-  const [open, setOpen] = useState(false);
   const [isActive] = useRoute(item.href + "/:rest*");
   const [isExact] = useRoute(item.href);
   const active = isActive || isExact;
+  const [open, setOpen] = useState(active);
+
+  useEffect(() => {
+    if (active) setOpen(true);
+  }, [active]);
 
   if (item.children) {
     return (
@@ -257,12 +276,16 @@ export function Layout({ children }: LayoutProps) {
           "flex items-center border-b border-border h-14 flex-shrink-0",
           collapsed ? "px-3 justify-center" : "px-4 gap-2.5"
         )}>
-          <div className="w-7 h-7 bg-foreground rounded-lg flex items-center justify-center flex-shrink-0">
-            <Building2 className="w-4 h-4 text-background" />
-          </div>
-          {!collapsed && (
-            <span className="text-[13px] font-semibold text-foreground truncate leading-tight flex-1">{systemName}</span>
-          )}
+          <Link href="/">
+            <span className={cn("flex items-center gap-2.5 cursor-pointer", collapsed ? "" : "flex-1 min-w-0")}>
+              <div className="w-7 h-7 bg-foreground rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                <Building2 className="w-4 h-4 text-background" />
+              </div>
+              {!collapsed && (
+                <span className="text-[13px] font-semibold text-foreground truncate leading-tight hover:text-primary transition-colors">{systemName}</span>
+              )}
+            </span>
+          </Link>
           {!collapsed && (
             <button
               onClick={() => setCollapsed(true)}

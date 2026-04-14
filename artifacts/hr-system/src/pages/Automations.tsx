@@ -99,11 +99,6 @@ export default function Automations() {
       <PageHeader title="Automations" breadcrumbs={[{ label: "Automations" }]} subtitle="Manage email automation rules and templates" />
 
       <Tabs value={activeTab}>
-        <TabsList className="mb-6">
-          <TabsTrigger value="rules" asChild><a href="/automations">Rules ({rules?.length ?? 0})</a></TabsTrigger>
-          <TabsTrigger value="templates" asChild><a href="/automations/templates">Email Templates</a></TabsTrigger>
-          <TabsTrigger value="logs" asChild><a href="/automations/logs">Logs</a></TabsTrigger>
-        </TabsList>
 
         <TabsContent value="rules">
           <div className="flex justify-end mb-4">

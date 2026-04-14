@@ -127,6 +127,20 @@ router.post("/onboarding/tasks/:id/complete", requireAuth, async (req, res) => {
   }
 });
 
+router.delete("/onboarding/checklists/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const id = req.params.id as string;
+    const [checklist] = await db.select().from(onboardingChecklistsTable).where(eq(onboardingChecklistsTable.id, id));
+    if (!checklist) { res.status(404).json({ error: "Checklist not found" }); return; }
+    // Tasks will cascade delete via FK constraint
+    await db.delete(onboardingTasksTable).where(eq(onboardingTasksTable.checklistId, id));
+    await db.delete(onboardingChecklistsTable).where(eq(onboardingChecklistsTable.id, id));
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 // ── OB-03: Document submission tracker — employee uploads, HR verifies ──
 router.get("/onboarding/documents/:employeeId", requireAuth, async (req, res): Promise<void> => {
   try {

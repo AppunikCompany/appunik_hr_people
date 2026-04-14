@@ -347,7 +347,8 @@ router.delete("/admin/roles/:id", requireAuth, requireRole("super_admin"), async
     const roleId = req.params.id as string;
     const [role] = await db.select().from(rolesTable).where(eq(rolesTable.id, roleId));
     if (!role) { res.status(404).json({ error: "Role not found" }); return; }
-    if (role.isSystem) { res.status(403).json({ error: "Cannot delete system role" }); return; }
+    // super_admin role itself can never be deleted
+    if (role.name === "super_admin") { res.status(403).json({ error: "The super_admin role cannot be deleted" }); return; }
     await db.delete(rolePermissionsTable).where(eq(rolePermissionsTable.roleId, roleId));
     await db.delete(rolesTable).where(eq(rolesTable.id, roleId));
     res.status(204).send();
