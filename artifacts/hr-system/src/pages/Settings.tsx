@@ -646,8 +646,10 @@ export default function Settings() {
                               <Button size="sm" variant="ghost" title="View/Edit role" onClick={() => { setEditRole(r); setRoleDialogOpen(true); }} className="h-7 w-7 p-0">
                                 <Edit className="w-3.5 h-3.5" />
                               </Button>
-                              {!r.isSystem && (
-                                <Button size="sm" variant="ghost" title="Delete role" onClick={() => deleteRole.mutate(r.id)} className="h-7 w-7 p-0 text-destructive hover:text-destructive">
+                              {r.name !== "super_admin" && (
+                                <Button size="sm" variant="ghost" title="Delete role" onClick={() => {
+                                  if (confirm(`Delete the "${r.name.replace(/_/g, " ")}" role? This cannot be undone.`)) deleteRole.mutate(r.id);
+                                }} className="h-7 w-7 p-0 text-destructive hover:text-destructive">
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </Button>
                               )}
