@@ -41,6 +41,11 @@ interface NavItem {
 
 const ALL_NAV_ITEMS: NavItem[] = [
   {
+    label: "Dashboard",
+    href: "/",
+    icon: LayoutDashboard,
+  },
+  {
     label: "Employees",
     href: "/employees",
     icon: Users,
@@ -267,12 +272,16 @@ export function Layout({ children }: LayoutProps) {
           "flex items-center border-b border-border h-14 flex-shrink-0",
           collapsed ? "px-3 justify-center" : "px-4 gap-2.5"
         )}>
-          <div className="w-7 h-7 bg-foreground rounded-lg flex items-center justify-center flex-shrink-0">
-            <Building2 className="w-4 h-4 text-background" />
-          </div>
-          {!collapsed && (
-            <span className="text-[13px] font-semibold text-foreground truncate leading-tight flex-1">{systemName}</span>
-          )}
+          <Link href="/">
+            <span className={cn("flex items-center gap-2.5 cursor-pointer", collapsed ? "" : "flex-1 min-w-0")}>
+              <div className="w-7 h-7 bg-foreground rounded-lg flex items-center justify-center flex-shrink-0 hover:opacity-80 transition-opacity">
+                <Building2 className="w-4 h-4 text-background" />
+              </div>
+              {!collapsed && (
+                <span className="text-[13px] font-semibold text-foreground truncate leading-tight hover:text-primary transition-colors">{systemName}</span>
+              )}
+            </span>
+          </Link>
           {!collapsed && (
             <button
               onClick={() => setCollapsed(true)}
