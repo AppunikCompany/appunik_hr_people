@@ -27,6 +27,7 @@ export const employeesTable = mysqlTable("people_employees", {
   fnfStatus: varchar("fnf_status", { length: 30 }),
   userId: varchar("user_id", { length: 36 }),
   zktecoMemberId: int("zkteco_member_id"),
+  zktecoDisplayId: varchar("zkteco_display_id", { length: 20 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });
