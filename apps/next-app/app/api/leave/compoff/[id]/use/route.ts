@@ -11,9 +11,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const { id } = await params;
     const [compoff] = await db.select().from(compoffsTable).where(eq(compoffsTable.id, id));
     if (!compoff) return Response.json({ error: "Not found" }, { status: 404 });
-    if (compoff.isUsed) return Response.json({ error: "Comp-off already used" }, { status: 400 });
+    if (compoff.status === "used") return Response.json({ error: "Comp-off already used" }, { status: 400 });
 
-    await db.update(compoffsTable).set({ isUsed: true, usedAt: new Date() }).where(eq(compoffsTable.id, id));
+    await db.update(compoffsTable).set({ status: "used" }).where(eq(compoffsTable.id, id));
     const [updated] = await db.select().from(compoffsTable).where(eq(compoffsTable.id, id));
     return Response.json(updated);
   } catch (e) {

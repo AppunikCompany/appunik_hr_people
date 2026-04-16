@@ -5,6 +5,8 @@ import { useAuth } from "@clerk/nextjs";
 import { setGetTokenFn } from "@/lib/auth-token";
 import { Toaster } from "sonner";
 
+const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+
 function ClerkTokenBridge() {
   const { getToken } = useAuth();
   useEffect(() => {
@@ -25,7 +27,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ClerkTokenBridge />
+      {hasClerk ? <ClerkTokenBridge /> : null}
       {children}
       <Toaster richColors position="top-right" />
     </QueryClientProvider>
