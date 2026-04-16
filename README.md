@@ -284,7 +284,7 @@ All major module pages are built with full UI:
 pnpm install
 
 # Set up environment
-export DATABASE_URL="mysql://user:password@host:3306/hr_suite"
+export DATABASE_URL="mysql://hr_people_app:hr_people_app_pass@127.0.0.1:3306/appunik"
 
 # Run database migrations
 pnpm --filter @workspace/db run push
