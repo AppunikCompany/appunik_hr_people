@@ -44,6 +44,33 @@ export type AutomationEvent =
   | "kra.completed"
   | "kra.deadline_approaching";
 
+const AUTOMATION_EVENTS = new Set<AutomationEvent>([
+  "employee.created",
+  "employee.probation_end",
+  "employee.birthday",
+  "employee.work_anniversary",
+  "employee.offboarding_started",
+  "attendance.late_arrival",
+  "attendance.absent_no_leave",
+  "leave.applied",
+  "leave.approved",
+  "leave.rejected",
+  "leave.balance_low",
+  "asset.assigned",
+  "asset.returned",
+  "onboarding.started",
+  "onboarding.completed",
+  "onboarding.task_completed",
+  "kra.assigned",
+  "kra.self_assessed",
+  "kra.completed",
+  "kra.deadline_approaching",
+]);
+
+export function isAutomationEvent(value: string): value is AutomationEvent {
+  return AUTOMATION_EVENTS.has(value as AutomationEvent);
+}
+
 interface FireEventOptions {
   event: AutomationEvent;
   employeeId: string;
