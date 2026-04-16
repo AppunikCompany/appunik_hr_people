@@ -11,6 +11,7 @@
     "dev": "cd artifacts/api-server && PORT=3001 npx tsx src/index.ts"
   },
   "private": true,
+  "packageManager": "pnpm@10.33.0",
   "devDependencies": {
     "prettier": "^3.8.1",
     "typescript": "~5.9.2"
