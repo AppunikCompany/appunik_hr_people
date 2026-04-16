@@ -296,16 +296,18 @@ pnpm --filter @workspace/hr-system run dev
 
 ## Deployment
 
-Production startup now runs the schema push before the API boots:
+Use a dedicated deploy flow for shared databases. Do not run migration on every process boot.
 
 ```bash
-pnpm start
+pnpm run deploy:start
 ```
 
-That command expands to:
+`deploy:start` runs:
 
 ```bash
-pnpm --filter @workspace/db run push && pnpm run start:api
+pnpm run db:guard:shared
+pnpm run db:migrate:deploy
+pnpm run start:api
 ```
 
 Deployment environments must provide one of:
@@ -313,7 +315,21 @@ Deployment environments must provide one of:
 - `MIGRATE_DATABASE_URL` preferred, using a DB user with DDL privileges for `drizzle-kit push`
 - `DATABASE_URL` with the same schema migration privileges if `MIGRATE_DATABASE_URL` is not set
 
-The runtime API can continue using the lower-privilege application user through `DATABASE_URL`, but the startup schema push must be able to create and alter tables.
+Shared DB safety contract:
+
+- Only `people_*` tables are managed by this app.
+- Never rename/drop/delete tables in shared DB migration flows.
+- Never use `push-force` in automation.
+- Existing `portal_*`, `recruit_*`, and other non-`people_*` tables must remain untouched.
+
+Validation checks for each deploy:
+
+1. `pnpm run db:guard:shared` passes.
+2. Migration logs show only `people_*` table operations.
+3. Existing non-`people_*` tables are unchanged.
+4. API starts and role seeding succeeds after migration.
+
+`pnpm start` now runs API only. Keep runtime and migration steps separate in platform configuration.
 
 ## Build Timeline (from spec)
 

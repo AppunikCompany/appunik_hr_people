@@ -8,8 +8,10 @@
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "start:api": "cd artifacts/api-server && node dist/index.mjs",
-    "start:deploy": "pnpm --filter @workspace/db run push && pnpm run start:api",
-    "start": "pnpm run start:deploy",
+    "db:guard:shared": "node ./scripts/shared-db-guard.mjs",
+    "db:migrate:deploy": "pnpm run db:guard:shared && pnpm --filter @workspace/db run push:shared-safe",
+    "deploy:start": "pnpm run db:migrate:deploy && pnpm run start:api",
+    "start": "pnpm run start:api",
     "dev": "cd artifacts/api-server && PORT=3001 npx tsx src/index.ts"
   },
   "private": true,
