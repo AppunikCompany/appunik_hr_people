@@ -133,8 +133,6 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
-const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
-
 function SidebarUserMenu({
   collapsed,
   user,
@@ -307,8 +305,11 @@ function LayoutWithoutClerk({ children }: LayoutProps) {
   );
 }
 
-export function Layout({ children }: LayoutProps) {
-  if (hasClerk) {
+export function Layout({
+  children,
+  clerkEnabled,
+}: LayoutProps & { clerkEnabled: boolean }) {
+  if (clerkEnabled) {
     return <LayoutWithClerk>{children}</LayoutWithClerk>;
   }
   return <LayoutWithoutClerk>{children}</LayoutWithoutClerk>;

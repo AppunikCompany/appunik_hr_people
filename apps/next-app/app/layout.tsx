@@ -9,24 +9,25 @@ export const metadata: Metadata = {
   description: "HR Management System — Appunik",
 };
 
-const hasClerk = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
+const clerkEnabled = !!clerkPublishableKey;
 
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  if (!hasClerk) {
+  if (!clerkEnabled) {
     return (
       <html lang="en">
         <body>
-          <Providers>
+          <Providers clerkEnabled={false}>
             <div className="px-4 py-2 border-b border-border bg-muted text-xs text-muted-foreground">
               Running without Clerk auth. Set{" "}
               <code className="font-mono">NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code>{" "}
               to enable login.
             </div>
-            <Layout>{children}</Layout>
+            <Layout clerkEnabled={false}>{children}</Layout>
           </Providers>
         </body>
       </html>
@@ -36,9 +37,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <ClerkProvider>
-          <Providers>
-            <Layout>{children}</Layout>
+        <ClerkProvider publishableKey={clerkPublishableKey}>
+          <Providers clerkEnabled>
+            <Layout clerkEnabled>{children}</Layout>
           </Providers>
         </ClerkProvider>
       </body>
