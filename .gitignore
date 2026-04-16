@@ -52,3 +52,5 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+/apps/next-app/.next
+/apps/next-app/.next
