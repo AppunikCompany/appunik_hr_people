@@ -26,7 +26,8 @@ export const employeesTable = mysqlTable("people_employees", {
   resignationDate: varchar("resignation_date", { length: 20 }),
   fnfStatus: varchar("fnf_status", { length: 30 }),
   userId: varchar("user_id", { length: 36 }),
-  zktecoMemberId: int("zkteco_member_id"),  // MEM 1, MEM 2… — matches device enrollment number
+  zktecoMemberId: int("zkteco_member_id"),
+  zktecoDisplayId: varchar("zkteco_display_id", { length: 20 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -70,7 +70,7 @@ export default function EmployeeDetail() {
         actions={
           <div className="flex items-center gap-2">
             <StatusBadge status={emp.status} />
-            <Button size="sm" variant="outline" onClick={() => { setEditForm({ firstName: emp.firstName, lastName: emp.lastName, email: emp.email, phone: emp.phone ?? "", joiningDate: emp.joiningDate, employmentType: emp.employmentType, status: emp.status, departmentId: emp.departmentId ?? "", designationId: emp.designationId ?? "" }); setEditOpen(true); }}>
+            <Button size="sm" variant="outline" onClick={() => { setEditForm({ firstName: emp.firstName, lastName: emp.lastName, email: emp.email, phone: emp.phone ?? "", joiningDate: emp.joiningDate, employmentType: emp.employmentType, status: emp.status, departmentId: emp.departmentId ?? "", designationId: emp.designationId ?? "", zktecoMemberId: emp.zktecoMemberId ?? null, zktecoDisplayId: emp.zktecoDisplayId ?? "" }); setEditOpen(true); }}>
               <Edit2 className="w-3.5 h-3.5 mr-1" /> Edit
             </Button>
             <Button size="sm" variant="destructive" onClick={() => setDeleteOpen(true)}>
@@ -192,6 +192,24 @@ export default function EmployeeDetail() {
             <div><Label>Last Name *</Label><Input value={editForm.lastName ?? ""} onChange={e => setEditForm((f: any) => ({ ...f, lastName: e.target.value }))} className="mt-1" /></div>
             <div className="col-span-2"><Label>Email *</Label><Input value={editForm.email ?? ""} onChange={e => setEditForm((f: any) => ({ ...f, email: e.target.value }))} className="mt-1" /></div>
             <div className="col-span-2"><Label>Phone</Label><Input value={editForm.phone ?? ""} onChange={e => setEditForm((f: any) => ({ ...f, phone: e.target.value }))} className="mt-1" /></div>
+            <div className="col-span-2">
+              <Label>Biometric Device ID</Label>
+              <Input
+                placeholder="e.g. M2, M3 (owners) or MEM12, MEM79 (staff)"
+                value={editForm.zktecoDisplayId ?? ""}
+                onChange={e => {
+                  const raw = e.target.value.trim().toUpperCase();
+                  const num = parseInt(raw.replace(/^(MEM|M)/, ""));
+                  setEditForm((f: any) => ({
+                    ...f,
+                    zktecoDisplayId: raw,
+                    zktecoMemberId: isNaN(num) ? null : num,
+                  }));
+                }}
+                className="mt-1 font-mono"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Use <strong>M1/M2/M3</strong> for owners, <strong>MEM79</strong> etc. for all other employees. Must match the enrollment number on the ZKTeco device.</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>

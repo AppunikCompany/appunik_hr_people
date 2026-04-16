@@ -8,6 +8,7 @@ import { dirname, resolve } from "node:path";
 import router from "./routes";
 import { resolveUserMiddleware } from "./middlewares/authMiddleware";
 import { seedSystemRoles } from "./lib/seedRoles";
+import { handleAdmsPush } from "./routes/zkteco";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -30,6 +31,11 @@ app.use(resolveUserMiddleware);
 
 // Seed system roles and default permissions on startup
 seedSystemRoles().catch((err) => console.error("[seed] Failed to seed roles:", err));
+
+// ZKTeco ADMS push — device sends plain-text punches, no auth header
+// Must be registered BEFORE the auth middleware router
+app.get("/iclock/cdata", handleAdmsPush);
+app.post("/iclock/cdata", express.text({ type: "*/*" }), handleAdmsPush);
 
 app.use("/api", router);
 
