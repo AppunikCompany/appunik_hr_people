@@ -4,9 +4,11 @@ import path from "path";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
-if (!process.env.DATABASE_URL) {
+const dbUrl = process.env.MIGRATE_DATABASE_URL || process.env.DATABASE_URL;
+
+if (!dbUrl) {
   throw new Error(
-    "DATABASE_URL is not set. Ensure the database is provisioned and that ../../.env (repo root) contains DATABASE_URL."
+    "DATABASE_URL (or MIGRATE_DATABASE_URL) is not set. Ensure ../../.env contains it."
   );
 }
 
@@ -14,6 +16,6 @@ export default defineConfig({
   schema: path.join(__dirname, "./src/schema/index.ts"),
   dialect: "mysql",
   dbCredentials: {
-    url: process.env.DATABASE_URL,
+    url: dbUrl,
   },
 });

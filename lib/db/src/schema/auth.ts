@@ -2,7 +2,7 @@ import { mysqlTable, varchar, json, timestamp, index } from "drizzle-orm/mysql-c
 
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
 export const sessionsTable = mysqlTable(
-  "sessions",
+  "people_sessions",
   {
     sid: varchar("sid", { length: 255 }).primaryKey(),
     sess: json("sess").notNull(),
