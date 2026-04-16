@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { letterTemplatesTable, generatedLettersTable, employeesTable } from "@workspace/db";
+import { letterTemplatesTable, generatedLettersTable, employeesTable, designationsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { PRIVILEGED_ROLES } from "../lib/ownership";
@@ -102,6 +102,11 @@ router.post("/letters/generate", requireAuth, requireRole("super_admin", "hr_adm
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
     if (!emp) { res.status(404).json({ error: "Employee not found" }); return; }
 
+    // Fetch designation name if available
+    const [desig] = emp.designationId
+      ? await db.select().from(designationsTable).where(eq(designationsTable.id, emp.designationId))
+      : [];
+
     // Replace template variables with employee data
     const today = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
     const variableMap: Record<string, string> = {
@@ -109,7 +114,7 @@ router.post("/letters/generate", requireAuth, requireRole("super_admin", "hr_adm
       "{{first_name}}": emp.firstName,
       "{{last_name}}": emp.lastName,
       "{{employee_code}}": emp.employeeCode ?? "",
-      "{{designation}}": emp.designation ?? "",
+      "{{designation}}": desig?.name ?? "",
       "{{department}}": "",
       "{{joining_date}}": emp.joiningDate ?? "",
       "{{date}}": today,
