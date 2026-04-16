@@ -294,6 +294,27 @@ pnpm --filter @workspace/api-server run dev
 pnpm --filter @workspace/hr-system run dev
 ```
 
+## Deployment
+
+Production startup now runs the schema push before the API boots:
+
+```bash
+pnpm start
+```
+
+That command expands to:
+
+```bash
+pnpm --filter @workspace/db run push && pnpm run start:api
+```
+
+Deployment environments must provide one of:
+
+- `MIGRATE_DATABASE_URL` preferred, using a DB user with DDL privileges for `drizzle-kit push`
+- `DATABASE_URL` with the same schema migration privileges if `MIGRATE_DATABASE_URL` is not set
+
+The runtime API can continue using the lower-privilege application user through `DATABASE_URL`, but the startup schema push must be able to create and alter tables.
+
 ## Build Timeline (from spec)
 
 | Phase | Modules | Est. Time | Status |
