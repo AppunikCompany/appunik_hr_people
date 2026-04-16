@@ -45,6 +45,7 @@ export async function handleAdmsPush(req: Request, res: Response) {
   // ── Device options request (GET with no table param) ─────────────────────
   // Device sends this on startup to get server time and sync settings
   if (req.method === "GET" && !table) {
+    console.log(`[ZKTeco] Device handshake from ${req.ip} | UA: ${req.headers["user-agent"] ?? "none"}`);
     res.set("Content-Type", "text/plain");
     return res.send(
       "GET OPTION FROM: 0\n" +
@@ -65,7 +66,15 @@ export async function handleAdmsPush(req: Request, res: Response) {
   // ── Attendance log push (POST, table=ATTLOG) ──────────────────────────────
   if (table === "ATTLOG") {
     // Body format per line: MEMBERNO\tDATETIME\tVERIFY\tINOUT\tWORKCODE
-    const body: string = typeof req.body === "string" ? req.body : "";
+    // Device may send as text/plain OR application/x-www-form-urlencoded
+    let body: string = "";
+    if (typeof req.body === "string") {
+      body = req.body;
+    } else if (req.body && typeof req.body === "object") {
+      // urlencoded parser turned it into an object — rejoin keys
+      body = Object.keys(req.body).join("\n");
+    }
+    console.log(`[ZKTeco] POST ATTLOG — Content-Type: ${req.headers["content-type"] ?? "none"} | body length: ${body.length} | body: ${JSON.stringify(body.slice(0, 200))}`);
     const lines = body.split("\n").map(l => l.trim()).filter(Boolean);
 
     for (const line of lines) {
@@ -117,9 +126,10 @@ export async function handleAdmsPush(req: Request, res: Response) {
         }).onDuplicateKeyUpdate({ set: { punchType } });
 
         // ── Parse date + time ────────────────────────────────────────────
+        // Device sends IST (UTC+5:30) — append offset so JS parses correctly
         const [datePart] = punchTime.split(" ");
         if (!datePart) continue;
-        const punchDate = new Date(punchTime.replace(" ", "T"));
+        const punchDate = new Date(punchTime.replace(" ", "T") + "+05:30");
 
         // ── Upsert attendance record ──────────────────────────────────────
         const [existing] = await db
