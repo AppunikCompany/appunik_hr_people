@@ -9,9 +9,11 @@ import { formatDate } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiUrl } from "@/lib/utils";
 import { toast } from "sonner";
+import { useParams } from "next/navigation";
 
-export default function EmployeeDetailPage({ params }: { params: { id: string } }) {
-  const id = params.id;
+export default function EmployeeDetailPage() {
+  const params = useParams<{ id: string }>();
+  const id = params?.id;
   const { data: emp, isLoading } = useEmployee(id ?? null);
   const { data: docs } = useQuery({
     queryKey: ["employee-docs", id],
