@@ -4,6 +4,9 @@ WORKDIR /app
 
 RUN npm i -g pnpm@10.33.0
 
+ARG CLERK_PUBLISHABLE_KEY
+ENV CLERK_PUBLISHABLE_KEY=$CLERK_PUBLISHABLE_KEY
+
 # Copy monorepo and install workspace deps.
 COPY . .
 RUN pnpm install --frozen-lockfile
