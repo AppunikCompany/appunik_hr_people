@@ -312,14 +312,19 @@ pnpm run start:api
 
 Deployment environments must provide one of:
 
-- `MIGRATE_DATABASE_URL` preferred, using a DB user with DDL privileges for `drizzle-kit push`
-- `DATABASE_URL` with the same schema migration privileges if `MIGRATE_DATABASE_URL` is not set
+- `MIGRATE_DATABASE_URL` preferred, using a DB user with DDL privileges for create-only bootstrap SQL
+- `DATABASE_URL` with the same privileges if `MIGRATE_DATABASE_URL` is not set
 
 Shared DB safety contract:
 
 - Only `people_*` tables are managed by this app.
 - Never rename/drop/delete tables in shared DB migration flows.
 - Never use `push-force` in automation.
+- Deploy migration runs non-interactive create-only bootstrap for core auth/RBAC tables:
+  - `people_sessions`
+  - `people_users`
+  - `people_roles`
+  - `people_role_permissions`
 - Existing `portal_*`, `recruit_*`, and other non-`people_*` tables must remain untouched.
 
 Validation checks for each deploy:
