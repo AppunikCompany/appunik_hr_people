@@ -1,0 +1,11 @@
+.git
+.cursor
+agent-transcripts
+terminals
+node_modules
+**/node_modules
+apps/next-app/.next
+**/.turbo
+*.log
+.env
+.env.local
