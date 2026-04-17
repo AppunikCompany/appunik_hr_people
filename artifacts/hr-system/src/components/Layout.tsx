@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
+const HAS_CLERK = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY);
+
 interface NavItem {
   label: string;
   href: string;
@@ -234,11 +236,20 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
+function ClerkLogoutItem() {
+  const { signOut } = useClerk();
+
+  return (
+    <DropdownMenuItem onClick={() => signOut()} className="flex items-center gap-2 text-destructive cursor-pointer">
+      <LogOut className="w-4 h-4" /> Logout
+    </DropdownMenuItem>
+  );
+}
+
 export function Layout({ children }: LayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const { data: user } = useCurrentUser();
   const { data: companyProfile } = useCompanyProfile();
-  const { signOut } = useClerk();
 
   const systemName = companyProfile?.name ? `${companyProfile.name}'s HR System` : "HR System";
 
@@ -341,9 +352,13 @@ export function Layout({ children }: LayoutProps) {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => signOut()} className="flex items-center gap-2 text-destructive cursor-pointer">
-                <LogOut className="w-4 h-4" /> Logout
-              </DropdownMenuItem>
+              {HAS_CLERK ? (
+                <ClerkLogoutItem />
+              ) : (
+                <DropdownMenuItem disabled className="flex items-center gap-2 text-muted-foreground cursor-not-allowed">
+                  <LogOut className="w-4 h-4" /> Logout (auth disabled)
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

@@ -34,15 +34,30 @@ export async function resolveUserMiddleware(
     return this.user != null;
   } as Request["isAuthenticated"];
 
-  const { userId } = getAuth(req);
-  if (!userId) {
+  const hasClerkKeys = Boolean(
+    process.env.CLERK_SECRET_KEY && process.env.CLERK_PUBLISHABLE_KEY,
+  );
+
+  // In local/dev without Clerk config, skip Clerk auth resolution entirely.
+  if (!hasClerkKeys) {
     next();
     return;
   }
 
-  const user = await resolveClerkUser(userId);
-  if (user) {
-    req.user = user;
+  try {
+    const { userId } = getAuth(req);
+    if (!userId) {
+      next();
+      return;
+    }
+
+    const user = await resolveClerkUser(userId);
+    if (user) {
+      req.user = user;
+    }
+  } catch (err) {
+    // Never block request handling (including static frontend) due to auth resolution.
+    console.error("[auth] Failed to resolve request auth context:", err);
   }
 
   next();
