@@ -2,7 +2,7 @@ FROM node:22.12.0-bookworm-slim
 
 WORKDIR /app
 
-RUN corepack enable && corepack prepare pnpm@10.33.0 --activate
+RUN npm i -g pnpm@10.33.0
 
 # Copy monorepo and install workspace deps.
 COPY . .
