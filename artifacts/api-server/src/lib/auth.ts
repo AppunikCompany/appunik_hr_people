@@ -1,55 +1,70 @@
 import { clerkClient } from "@clerk/express";
-import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, employeesTable } from "@workspace/db";
+import { eq, or } from "drizzle-orm";
 import type { AuthUser } from "@workspace/api-zod";
 
 /**
- * Resolve a Clerk userId into our local DB user record.
- * If the user doesn't exist in our DB yet, create them from Clerk's user data.
+ * Resolve a Clerk userId into our local DB employee record.
+ * If not found by userId, falls back to email match (links the record).
+ * If not found at all, creates a new employee record.
  */
 export async function resolveClerkUser(clerkUserId: string): Promise<AuthUser | null> {
-  // Check if user already exists in our DB
-  const [existing] = await db
-    .select()
-    .from(usersTable)
-    .where(eq(usersTable.id, clerkUserId));
-
-  if (existing) {
-    return {
-      id: existing.id,
-      email: existing.email,
-      firstName: existing.firstName,
-      lastName: existing.lastName,
-      profileImageUrl: existing.profileImageUrl,
-      role: existing.role as AuthUser["role"],
-      permissions: {},
-    };
-  }
-
-  // User doesn't exist — fetch from Clerk and create
   try {
     const clerkUser = await clerkClient.users.getUser(clerkUserId);
     const email = clerkUser.emailAddresses?.[0]?.emailAddress ?? null;
 
-    await db
-      .insert(usersTable)
-      .values({
+    const conditions = email
+      ? or(eq(employeesTable.userId, clerkUserId), eq(employeesTable.email, email))
+      : eq(employeesTable.userId, clerkUserId);
+
+    const [existing] = await db.select().from(employeesTable).where(conditions);
+
+    if (existing) {
+      if (!existing.userId) {
+        await db
+          .update(employeesTable)
+          .set({ userId: clerkUserId, profileImageUrl: clerkUser.imageUrl ?? existing.profileImageUrl })
+          .where(eq(employeesTable.id, existing.id));
+      }
+      return {
         id: clerkUserId,
-        email,
-        firstName: clerkUser.firstName,
-        lastName: clerkUser.lastName,
-        profileImageUrl: clerkUser.imageUrl,
-        role: "employee",
-      });
-    const [created] = await db.select().from(usersTable).where(eq(usersTable.id, clerkUserId));
+        email: existing.email,
+        firstName: existing.firstName,
+        lastName: existing.lastName,
+        profileImageUrl: existing.profileImageUrl ?? clerkUser.imageUrl,
+        role: (existing.role ?? "employee") as AuthUser["role"],
+        permissions: {},
+      };
+    }
+
+    if (!email) return null;
+
+    // Create new employee record
+    const empId = crypto.randomUUID();
+    const all = await db.select({ code: employeesTable.employeeCode }).from(employeesTable);
+    const nums = all.map((e) => parseInt(e.code.replace("EMP-", ""), 10)).filter((n) => !isNaN(n));
+    const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+    const employeeCode = `EMP-${String(next).padStart(3, "0")}`;
+
+    await db.insert(employeesTable).values({
+      id: empId,
+      employeeCode,
+      firstName: clerkUser.firstName ?? "Unknown",
+      lastName: clerkUser.lastName ?? "",
+      email,
+      joiningDate: new Date().toISOString().split("T")[0],
+      userId: clerkUserId,
+      role: "employee",
+      profileImageUrl: clerkUser.imageUrl ?? null,
+    });
 
     return {
-      id: created.id,
-      email: created.email,
-      firstName: created.firstName,
-      lastName: created.lastName,
-      profileImageUrl: created.profileImageUrl,
-      role: created.role as AuthUser["role"],
+      id: clerkUserId,
+      email,
+      firstName: clerkUser.firstName ?? "Unknown",
+      lastName: clerkUser.lastName ?? "",
+      profileImageUrl: clerkUser.imageUrl ?? null,
+      role: "employee",
       permissions: {},
     };
   } catch (err) {

@@ -9,7 +9,6 @@ import {
   leavePoliciesTable,
   leaveTypesTable,
   employeesTable,
-  usersTable,
   rolesTable,
   rolePermissionsTable,
 } from "@workspace/db";
@@ -245,24 +244,17 @@ router.patch("/admin/financial-year", requireAuth, requireRole("super_admin", "h
 // ── AD-06: Role & Permission Management ──
 router.get("/admin/users", requireAuth, requireRole("super_admin"), async (_req, res) => {
   try {
-    const users = await db.select().from(usersTable);
-    // Enrich with employee link if exists
     const employees = await db.select().from(employeesTable);
-    const empByUserId = new Map(employees.filter((e) => e.userId).map((e) => [e.userId, e]));
-
-    const result = users.map((u) => {
-      const emp = empByUserId.get(u.id);
-      return {
-        id: u.id,
-        email: u.email,
-        firstName: u.firstName,
-        lastName: u.lastName,
-        role: u.role,
-        employeeId: emp?.id ?? null,
-        employeeCode: emp?.employeeCode ?? null,
-        createdAt: u.createdAt,
-      };
-    });
+    const result = employees.map((e) => ({
+      id: e.userId ?? e.id,
+      email: e.email,
+      firstName: e.firstName,
+      lastName: e.lastName,
+      role: e.role,
+      employeeId: e.id,
+      employeeCode: e.employeeCode,
+      createdAt: e.createdAt,
+    }));
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -279,10 +271,10 @@ router.patch("/admin/users/:id/role", requireAuth, requireRole("super_admin"), a
       res.status(400).json({ error: `Invalid role. Must be one of: ${validRoleNames.join(", ")}` });
       return;
     }
-    await db.update(usersTable).set({ role }).where(eq(usersTable.id, userId));
-    const [user] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
-    if (!user) { res.status(404).json({ error: "User not found" }); return; }
-    res.json(user);
+    await db.update(employeesTable).set({ role }).where(eq(employeesTable.userId, userId));
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+    if (!emp) { res.status(404).json({ error: "User not found" }); return; }
+    res.json({ id: emp.userId ?? emp.id, email: emp.email, firstName: emp.firstName, lastName: emp.lastName, role: emp.role });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
