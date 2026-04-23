@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useClerk } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
-import { useCurrentUser } from "@/hooks/useApi";
+import { useCurrentUser, fetchApi } from "@/hooks/useApi";
 import {
   Users,
   Clock,
@@ -34,6 +34,24 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+const ONBOARDING_SKIP_PATHS = ["/onboarding-setup", "/sign-in"];
+
+function OnboardingGuard() {
+  const pathname = usePathname();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (ONBOARDING_SKIP_PATHS.some((p) => pathname.startsWith(p))) return;
+    fetchApi<{ completed: boolean }>("/me/onboarding-status")
+      .then(({ completed }) => {
+        if (!completed) router.replace("/onboarding-setup");
+      })
+      .catch(() => {});
+  }, [pathname, router]);
+
+  return null;
+}
 
 interface NavItem {
   label: string;
@@ -205,6 +223,7 @@ function LayoutWithClerk({ children }: LayoutProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <OnboardingGuard />
       <aside
         className={cn(
           "flex flex-col bg-white border-r border-border transition-all duration-200 flex-shrink-0",
@@ -262,6 +281,7 @@ function LayoutWithoutClerk({ children }: LayoutProps) {
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
+      <OnboardingGuard />
       <aside
         className={cn(
           "flex flex-col bg-white border-r border-border transition-all duration-200 flex-shrink-0",

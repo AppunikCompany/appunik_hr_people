@@ -3,27 +3,11 @@ import {
   employeesTable,
   departmentsTable,
   designationsTable,
-  leaveBalancesTable,
-  leaveTypesTable,
 } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
-import { getAuthUser, unauthorized, forbidden, hasRole } from "@/lib/auth";
-import { fireAutomationEvent } from "@/lib/automations";
+import { eq } from "drizzle-orm";
+import { getAuthUser, unauthorized } from "@/lib/auth";
 
 type Employee = typeof employeesTable.$inferSelect;
-
-function toEmployeeCode(n: number): string {
-  return `EMP-${String(n).padStart(3, "0")}`;
-}
-
-async function nextEmployeeCode(): Promise<string> {
-  const all = await db.select({ code: employeesTable.employeeCode }).from(employeesTable);
-  const nums = all
-    .map((e) => parseInt(e.code.replace("EMP-", ""), 10))
-    .filter((n) => !isNaN(n));
-  const next = nums.length > 0 ? Math.max(...nums) + 1 : 1;
-  return toEmployeeCode(next);
-}
 
 async function enrichEmployee(emp: Employee) {
   let departmentName: string | null = null;
@@ -95,23 +79,3 @@ export async function GET(request: Request) {
   }
 }
 
-export async function POST(request: Request) {
-  try {
-    const user = await getAuthUser();
-    if (!user) return unauthorized();
-    if (!hasRole(user, ["super_admin", "hr_admin"])) return forbidden();
-
-    const body = await request.json();
-    const code = await nextEmployeeCode();
-    const newEmpId = crypto.randomUUID();
-    await db.insert(employeesTable).values({ ...body, id: newEmpId, employeeCode: code });
-    const [employee] = await db.select().from(employeesTable).where(eq(employeesTable.id, newEmpId));
-    const enriched = await enrichEmployee(employee);
-
-    fireAutomationEvent({ event: "employee.created", employeeId: employee.id }).catch(console.error);
-
-    return Response.json(enriched, { status: 201 });
-  } catch (e) {
-    return Response.json({ error: String(e) }, { status: 500 });
-  }
-}

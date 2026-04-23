@@ -55,6 +55,8 @@ export const compoffsTable = mysqlTable("people_compoffs", {
   reason: text("reason"),
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   expiryDate: varchar("expiry_date", { length: 20 }),
+  isUsed: boolean("is_used").notNull().default(false),
+  usedAt: timestamp("used_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -1,5 +1,3 @@
-import { db, employeesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
 import { getAuthUser } from "@/lib/auth";
 
 export async function GET() {
@@ -9,11 +7,6 @@ export async function GET() {
     return Response.json({ id: null, role: "guest" });
   }
 
-  const [emp] = await db
-    .select()
-    .from(employeesTable)
-    .where(eq(employeesTable.userId, user.id));
-
   return Response.json({
     id: user.id,
     username: user.firstName,
@@ -22,6 +15,6 @@ export async function GET() {
     profileImageUrl: user.profileImageUrl,
     email: user.email,
     role: user.role ?? "employee",
-    employeeId: emp?.id ?? null,
+    employeeId: user.employeeId,
   });
 }

@@ -14,7 +14,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatDate } from "@/lib/utils";
-import { Plus, Search, Eye, Edit2, Trash2 } from "lucide-react";
+import { Search, Eye, Edit2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const EMPLOYMENT_TYPES = [
@@ -59,28 +59,25 @@ type EmployeeForm = {
   status: string;
 };
 
-function EmployeeFormDialog({
+function EditEmployeeDialog({
   open,
   onClose,
-  initial,
-  employeeId,
+  employee,
 }: {
   open: boolean;
   onClose: () => void;
-  initial?: Partial<EmployeeForm>;
-  employeeId?: string;
+  employee: Employee;
 }) {
-  const isEdit = !!employeeId;
   const [form, setForm] = useState<EmployeeForm>({
-    firstName: initial?.firstName ?? "",
-    lastName: initial?.lastName ?? "",
-    email: initial?.email ?? "",
-    phone: initial?.phone ?? "",
-    departmentId: initial?.departmentId ?? "",
-    designationId: initial?.designationId ?? "",
-    joiningDate: initial?.joiningDate ?? new Date().toISOString().split("T")[0],
-    employmentType: initial?.employmentType ?? "full_time",
-    status: initial?.status ?? "active",
+    firstName: employee.firstName,
+    lastName: employee.lastName,
+    email: employee.email,
+    phone: employee.phone ?? "",
+    departmentId: employee.departmentId ?? "",
+    designationId: employee.designationId ?? "",
+    joiningDate: employee.joiningDate,
+    employmentType: employee.employmentType,
+    status: employee.status,
   });
   const { data: depts } = useDepartments();
   const { data: desigs } = useDesignations();
@@ -88,13 +85,11 @@ function EmployeeFormDialog({
 
   const mutation = useMutation({
     mutationFn: (data: EmployeeForm) =>
-      isEdit
-        ? fetchApi(`/employees/${employeeId}`, { method: "PATCH", body: JSON.stringify(data) })
-        : fetchApi("/employees", { method: "POST", body: JSON.stringify(data) }),
+      fetchApi(`/employees/${employee.id}`, { method: "PATCH", body: JSON.stringify(data) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["employees"] });
       onClose();
-      toast.success(isEdit ? "Employee updated" : "Employee added");
+      toast.success("Employee updated");
     },
     onError: (e: Error) => toast.error(e.message),
   });
@@ -105,8 +100,8 @@ function EmployeeFormDialog({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit Employee" : "Add New Employee"}</DialogTitle>
-          <DialogDescription>{isEdit ? "Update the employee's details." : "Fill in the details for the new employee."}</DialogDescription>
+          <DialogTitle>Edit Employee</DialogTitle>
+          <DialogDescription>Update the employee's details.</DialogDescription>
         </DialogHeader>
         <div className="grid grid-cols-2 gap-4 py-2">
           <div>
@@ -175,7 +170,7 @@ function EmployeeFormDialog({
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={() => mutation.mutate(form)} disabled={mutation.isPending}>
-            {mutation.isPending ? (isEdit ? "Saving..." : "Adding...") : (isEdit ? "Save Changes" : "Add Employee")}
+            {mutation.isPending ? "Saving..." : "Save Changes"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -228,7 +223,6 @@ export default function Employees() {
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState("");
   const [status, setStatus] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
   const [deleteEmployee, setDeleteEmployee] = useState<Employee | null>(null);
 
@@ -253,11 +247,6 @@ export default function Employees() {
       <PageHeader
         title="Employees"
         breadcrumbs={[{ label: "Employees" }]}
-        actions={
-          <Button onClick={() => setAddOpen(true)} size="sm">
-            <Plus className="w-4 h-4 mr-1" /> Add Employee
-          </Button>
-        }
       />
 
       <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-sm">
@@ -362,27 +351,11 @@ export default function Employees() {
         </div>
       </div>
 
-      <EmployeeFormDialog
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-      />
-
       {editEmployee && (
-        <EmployeeFormDialog
+        <EditEmployeeDialog
           open={!!editEmployee}
           onClose={() => setEditEmployee(null)}
-          employeeId={editEmployee.id}
-          initial={{
-            firstName: editEmployee.firstName,
-            lastName: editEmployee.lastName,
-            email: editEmployee.email,
-            phone: editEmployee.phone ?? "",
-            departmentId: editEmployee.departmentId ?? "",
-            designationId: editEmployee.designationId ?? "",
-            joiningDate: editEmployee.joiningDate,
-            employmentType: editEmployee.employmentType,
-            status: editEmployee.status,
-          }}
+          employee={editEmployee}
         />
       )}
 

@@ -1,13 +1,14 @@
 import { auth, currentUser } from "@clerk/nextjs/server";
-import { db, usersTable, employeesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { db, employeesTable } from "@workspace/db";
+import { eq, or } from "drizzle-orm";
 
 export type UserRole =
   | "super_admin"
   | "hr_admin"
   | "it_admin"
   | "manager"
-  | "employee";
+  | "employee"
+  | "QA";
 
 export interface AuthUser {
   id: string;
@@ -16,6 +17,7 @@ export interface AuthUser {
   lastName: string | null;
   profileImageUrl: string | null;
   role: UserRole;
+  employeeId: string | null;
 }
 
 const BYPASS_AUTH =
@@ -28,6 +30,7 @@ const DEV_USER: AuthUser = {
   lastName: "User",
   profileImageUrl: null,
   role: "hr_admin",
+  employeeId: null,
 };
 
 async function nextEmployeeCode(): Promise<string> {
@@ -48,74 +51,70 @@ export async function getAuthUser(): Promise<AuthUser | null> {
     const { userId } = await auth();
     if (!userId) return null;
 
-    const [existing] = await db
-      .select()
-      .from(usersTable)
-      .where(eq(usersTable.id, userId));
-
-    if (existing) {
-      return {
-        id: existing.id,
-        email: existing.email,
-        firstName: existing.firstName,
-        lastName: existing.lastName,
-        profileImageUrl: existing.profileImageUrl,
-        role: existing.role as UserRole,
-      };
-    }
-
-    // Auto-create user from Clerk on first login
     const clerkUser = await currentUser();
     if (!clerkUser) return null;
 
     const email = clerkUser.emailAddresses?.[0]?.emailAddress ?? null;
 
-    try {
-      await db.insert(usersTable).values({
-        id: userId,
-        email,
-        firstName: clerkUser.firstName,
-        lastName: clerkUser.lastName,
-        profileImageUrl: clerkUser.imageUrl,
-        role: "employee",
-      });
-    } catch {
-      // Already exists (race condition) — continue
-    }
+    // Look up the employee record by Clerk userId OR email (handles manually-added employees)
+    const conditions = email
+      ? or(eq(employeesTable.userId, userId), eq(employeesTable.email, email))
+      : eq(employeesTable.userId, userId);
 
-    // Auto-create linked employee record
-    if (email) {
-      const [existingEmp] = await db
-        .select()
-        .from(employeesTable)
-        .where(eq(employeesTable.userId, userId));
-      if (!existingEmp) {
-        const code = await nextEmployeeCode();
-        await db.insert(employeesTable).values({
-          id: crypto.randomUUID(),
-          employeeCode: code,
-          firstName: clerkUser.firstName ?? "Unknown",
-          lastName: clerkUser.lastName ?? "",
-          email,
-          joiningDate: new Date().toISOString().split("T")[0],
-          userId,
-        });
-      }
-    }
-
-    const [created] = await db
+    const [existing] = await db
       .select()
-      .from(usersTable)
-      .where(eq(usersTable.id, userId));
-    if (!created) return null;
+      .from(employeesTable)
+      .where(conditions);
+
+    if (existing) {
+      // Link userId if the record was found by email and not yet linked
+      if (!existing.userId) {
+        await db
+          .update(employeesTable)
+          .set({
+            userId,
+            profileImageUrl: clerkUser.imageUrl ?? existing.profileImageUrl,
+          })
+          .where(eq(employeesTable.id, existing.id));
+      }
+
+      return {
+        id: userId,
+        email: existing.email,
+        firstName: existing.firstName,
+        lastName: existing.lastName,
+        profileImageUrl: existing.profileImageUrl ?? clerkUser.imageUrl,
+        role: (existing.role ?? "employee") as UserRole,
+        employeeId: existing.id,
+      };
+    }
+
+    // No existing employee — create one
+    if (!email) return null;
+
+    const code = await nextEmployeeCode();
+    const empId = crypto.randomUUID();
+
+    await db.insert(employeesTable).values({
+      id: empId,
+      employeeCode: code,
+      firstName: clerkUser.firstName ?? "Unknown",
+      lastName: clerkUser.lastName ?? "",
+      email,
+      joiningDate: new Date().toISOString().split("T")[0],
+      userId,
+      role: "employee",
+      profileImageUrl: clerkUser.imageUrl ?? null,
+    });
 
     return {
-      id: created.id,
-      email: created.email,
-      firstName: created.firstName,
-      lastName: created.lastName,
-      profileImageUrl: created.profileImageUrl,
-      role: created.role as UserRole,
+      id: userId,
+      email,
+      firstName: clerkUser.firstName ?? "Unknown",
+      lastName: clerkUser.lastName ?? "",
+      profileImageUrl: clerkUser.imageUrl ?? null,
+      role: "employee",
+      employeeId: empId,
     };
   } catch {
     return null;

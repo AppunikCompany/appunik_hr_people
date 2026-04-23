@@ -1,5 +1,4 @@
-import { db } from "@workspace/db";
-import { usersTable } from "@workspace/db";
+import { db, employeesTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { getAuthUser, unauthorized, forbidden, hasRole } from "@/lib/auth";
 
@@ -19,7 +18,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const { id: userId } = await params;
     const { role } = await request.json() as { role: string };
 
-    // super_admin is a locked role — cannot be assigned or removed via the UI
     if (role === "super_admin") {
       return Response.json({ error: "super_admin is a locked role and cannot be assigned via the app." }, { status: 403 });
     }
@@ -31,10 +29,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     if (!validRoles.includes(role)) {
       return Response.json({ error: `Invalid role. Must be one of: ${validRoles.join(", ")}` }, { status: 400 });
     }
-    await db.update(usersTable).set({ role: role as any }).where(eq(usersTable.id, userId));
-    const [updatedUser] = await db.select().from(usersTable).where(eq(usersTable.id, userId));
-    if (!updatedUser) return Response.json({ error: "User not found" }, { status: 404 });
-    return Response.json(updatedUser);
+
+    await db
+      .update(employeesTable)
+      .set({ role })
+      .where(eq(employeesTable.userId, userId));
+
+    const [updated] = await db
+      .select()
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, userId));
+
+    if (!updated) return Response.json({ error: "User not found" }, { status: 404 });
+
+    return Response.json({
+      id: updated.userId,
+      email: updated.email,
+      firstName: updated.firstName,
+      lastName: updated.lastName,
+      role: updated.role,
+    });
   } catch (e) {
     return Response.json({ error: String(e) }, { status: 500 });
   }
