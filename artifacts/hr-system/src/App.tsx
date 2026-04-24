@@ -1,11 +1,13 @@
 import { useEffect } from "react";
-import { Switch, Route, Router as WouterRouter } from "wouter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { ClerkProvider, SignIn, SignedIn, SignedOut, useAuth } from "@clerk/clerk-react";
 import { Toaster } from "sonner";
 import { setGetTokenFn } from "@/lib/auth-token";
+import { fetchApi } from "@/hooks/useApi";
 import { Layout } from "@/components/Layout";
 import Dashboard from "@/pages/Dashboard";
+import OnboardingSetup from "@/pages/OnboardingSetup";
 import Employees from "@/pages/Employees";
 import EmployeeDetail from "@/pages/EmployeeDetail";
 import Attendance from "@/pages/Attendance";
@@ -43,6 +45,24 @@ function AuthTokenBridge() {
   return null;
 }
 
+const ONBOARDING_SKIP_PATHS = ["/onboarding-setup"];
+
+function OnboardingGuard() {
+  const [location, navigate] = useLocation();
+  const { data } = useQuery<{ completed: boolean }>({
+    queryKey: ["onboarding-status"],
+    queryFn: () => fetchApi("/me/onboarding-status"),
+    retry: false,
+    staleTime: 60_000,
+  });
+  useEffect(() => {
+    if (!data) return;
+    if (ONBOARDING_SKIP_PATHS.some((p) => location.startsWith(p))) return;
+    if (!data.completed) navigate("/onboarding-setup");
+  }, [data, location, navigate]);
+  return null;
+}
+
 function NotFound() {
   return (
     <div className="flex items-center justify-center h-full min-h-[400px]">
@@ -56,45 +76,53 @@ function NotFound() {
 
 function Router() {
   return (
-    <Layout>
+    <>
+      <OnboardingGuard />
       <Switch>
-        <Route path="/" component={Dashboard} />
-        <Route path="/employees" component={Employees} />
-        <Route path="/employees/org-chart" component={Employees} />
-        <Route path="/employees/:id" component={EmployeeDetail} />
-        <Route path="/attendance" component={Attendance} />
-        <Route path="/attendance/my" component={Attendance} />
-        <Route path="/attendance/holidays" component={Attendance} />
-        <Route path="/leave" component={Leave} />
-        <Route path="/leave/calendar" component={Leave} />
-        <Route path="/leave/balances" component={Leave} />
-        <Route path="/leave/compoff" component={Leave} />
-        <Route path="/onboarding" component={Onboarding} />
-        <Route path="/assets" component={Assets} />
-        <Route path="/performance" component={Performance} />
-        <Route path="/performance/cycles" component={Performance} />
-        <Route path="/performance/templates" component={Performance} />
-        <Route path="/reports" component={Reports} />
-        <Route path="/reports/attendance" component={Reports} />
-        <Route path="/reports/wfh" component={Reports} />
-        <Route path="/reports/attrition" component={Reports} />
-        <Route path="/reports/assets" component={Reports} />
-        <Route path="/reports/kra" component={Reports} />
-        <Route path="/automations" component={Automations} />
-        <Route path="/automations/templates" component={Automations} />
-        <Route path="/automations/logs" component={Automations} />
-        <Route path="/settings" component={Settings} />
-        <Route path="/settings/departments" component={Settings} />
-        <Route path="/settings/designations" component={Settings} />
-        <Route path="/settings/leave-policies" component={Settings} />
-        <Route path="/settings/notifications" component={Settings} />
-        <Route path="/settings/roles" component={Settings} />
-        <Route path="/letters" component={Letters} />
-        <Route path="/self-service" component={SelfService} />
-        <Route path="/profile" component={Profile} />
-        <Route component={NotFound} />
+        <Route path="/onboarding-setup" component={OnboardingSetup} />
+        <Route>
+          <Layout>
+            <Switch>
+              <Route path="/" component={Dashboard} />
+              <Route path="/employees" component={Employees} />
+              <Route path="/employees/org-chart" component={Employees} />
+              <Route path="/employees/:id" component={EmployeeDetail} />
+              <Route path="/attendance" component={Attendance} />
+              <Route path="/attendance/my" component={Attendance} />
+              <Route path="/attendance/holidays" component={Attendance} />
+              <Route path="/leave" component={Leave} />
+              <Route path="/leave/calendar" component={Leave} />
+              <Route path="/leave/balances" component={Leave} />
+              <Route path="/leave/compoff" component={Leave} />
+              <Route path="/onboarding" component={Onboarding} />
+              <Route path="/assets" component={Assets} />
+              <Route path="/performance" component={Performance} />
+              <Route path="/performance/cycles" component={Performance} />
+              <Route path="/performance/templates" component={Performance} />
+              <Route path="/reports" component={Reports} />
+              <Route path="/reports/attendance" component={Reports} />
+              <Route path="/reports/wfh" component={Reports} />
+              <Route path="/reports/attrition" component={Reports} />
+              <Route path="/reports/assets" component={Reports} />
+              <Route path="/reports/kra" component={Reports} />
+              <Route path="/automations" component={Automations} />
+              <Route path="/automations/templates" component={Automations} />
+              <Route path="/automations/logs" component={Automations} />
+              <Route path="/settings" component={Settings} />
+              <Route path="/settings/departments" component={Settings} />
+              <Route path="/settings/designations" component={Settings} />
+              <Route path="/settings/leave-policies" component={Settings} />
+              <Route path="/settings/notifications" component={Settings} />
+              <Route path="/settings/roles" component={Settings} />
+              <Route path="/letters" component={Letters} />
+              <Route path="/self-service" component={SelfService} />
+              <Route path="/profile" component={Profile} />
+              <Route component={NotFound} />
+            </Switch>
+          </Layout>
+        </Route>
       </Switch>
-    </Layout>
+    </>
   );
 }
 
