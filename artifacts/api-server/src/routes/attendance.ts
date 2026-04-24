@@ -366,7 +366,6 @@ router.patch("/attendance/regularization/:id", requireAuth, requireRole("super_a
     const { status, reviewNote } = req.body as { status: string; reviewNote?: string };
     if (!["approved", "rejected"].includes(status)) { res.status(400).json({ error: "Status must be approved or rejected" }); return; }
 
-    const [userRow] = await (db as any).execute(`SELECT employee_id FROM people_users WHERE clerk_id = ? OR id = ?`, [(req as any).auth?.userId ?? "", (req as any).user?.id ?? ""]);
     const reviewerId = (req as any).user?.id ?? null;
 
     await (db as any).execute(
