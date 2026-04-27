@@ -12,7 +12,7 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatDate } from "@/lib/utils";
-import { Plus, Search, Eye, Edit2, Trash2 } from "lucide-react";
+import { Search, Eye, Edit2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const EMPLOYMENT_TYPES = [
@@ -282,7 +282,6 @@ export default function Employees() {
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState("");
   const [status, setStatus] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
   const [deleteEmployee, setDeleteEmployee] = useState<Employee | null>(null);
 
@@ -307,13 +306,7 @@ export default function Employees() {
       <PageHeader
         title={showOrgChart ? "Org Chart" : "Employees"}
         breadcrumbs={showOrgChart ? [{ label: "Employees", href: "/employees" }, { label: "Org Chart" }] : [{ label: "Employees", href: "/employees" }, { label: "All Employees" }]}
-        actions={
-          !showOrgChart && (
-            <Button onClick={() => setAddOpen(true)} size="sm">
-              <Plus className="w-4 h-4 mr-1" /> Add Employee
-            </Button>
-          )
-        }
+        actions={null}
       />
 
       {showOrgChart ? (
@@ -421,12 +414,6 @@ export default function Employees() {
         </div>
       </div>
       )}
-
-      <EmployeeFormDialog
-        key={addOpen ? "add-open" : "add-closed"}
-        open={addOpen}
-        onClose={() => setAddOpen(false)}
-      />
 
       {editEmployee && (
         <EmployeeFormDialog
