@@ -20,6 +20,12 @@ export default function RootLayout({
   if (!clerkEnabled) {
     return (
       <html lang="en">
+        <head>
+          <script
+            src="https://report.appunik-team.com/widget.js"
+            data-site-token="fk9IZS7jOktbL8jtdz7VkCKXDFk11v-g6dypk0D0iEY"
+          ></script>
+        </head>
         <body>
           <Providers clerkEnabled={false}>
             <div className="px-4 py-2 border-b border-border bg-muted text-xs text-muted-foreground">
@@ -36,6 +42,12 @@ export default function RootLayout({
 
   return (
     <html lang="en">
+      <head>
+        <script
+          src="https://report.appunik-team.com/widget.js"
+          data-site-token="fk9IZS7jOktbL8jtdz7VkCKXDFk11v-g6dypk0D0iEY"
+        ></script>
+      </head>
       <body>
         <ClerkProvider publishableKey={clerkPublishableKey}>
           <Providers clerkEnabled>
