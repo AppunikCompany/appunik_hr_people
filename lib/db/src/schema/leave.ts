@@ -37,6 +37,9 @@ export const leaveRequestsTable = mysqlTable("people_leave_requests", {
   startDate: varchar("start_date", { length: 20 }).notNull(),
   endDate: varchar("end_date", { length: 20 }).notNull(),
   days: double("days").notNull(),
+  isHalfDay: boolean("is_half_day").notNull().default(false),
+  halfDayPeriod: varchar("half_day_period", { length: 20 }), // "half_day_morning" | "half_day_afternoon"
+  medicalDocumentUrl: text("medical_document_url"),
   reason: text("reason"),
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   managerComment: text("manager_comment"),

@@ -15,8 +15,16 @@ import { formatDate } from "@/lib/utils";
 import { Plus, Check, X, Calendar, Info } from "lucide-react";
 import { toast } from "sonner";
 
+function isSickLeave(types: any[], leaveTypeId: string): boolean {
+  const lt = types?.find((t: any) => t.id === leaveTypeId);
+  if (!lt) return false;
+  const name = (lt.name ?? "").toLowerCase();
+  const code = (lt.code ?? "").toLowerCase();
+  return name.includes("sick") || code === "sl" || code === "sick" || code === "sick_leave";
+}
+
 function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [form, setForm] = useState({ employeeId: "", leaveTypeId: "", startDate: "", endDate: "", reason: "", leaveDuration: "full_day" });
+  const [form, setForm] = useState({ employeeId: "", leaveTypeId: "", startDate: "", endDate: "", reason: "", leaveDuration: "full_day", medicalDocumentUrl: "" });
   const { data: employees } = useEmployees();
   const { data: types } = useLeaveTypes();
   const qc = useQueryClient();
@@ -26,6 +34,11 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
     onError: (e: any) => toast.error(e.message),
   });
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const isHalfDay = form.leaveDuration !== "full_day";
+  const sick = isSickLeave(types as any[] ?? [], form.leaveTypeId);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const isAdvanceSick = sick && form.startDate && new Date(form.startDate) > today;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -50,8 +63,8 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
             <Select value={form.leaveTypeId} onValueChange={v => set("leaveTypeId", v)}>
               <SelectTrigger className="mt-1"><SelectValue placeholder="Select type..." /></SelectTrigger>
               <SelectContent>
-                {types && types.length > 0
-                  ? types.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)
+                {types && (types as any[]).length > 0
+                  ? (types as any[]).map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)
                   : <SelectItem value="_none" disabled>No leave types configured</SelectItem>}
               </SelectContent>
             </Select>
@@ -67,16 +80,39 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className={isHalfDay ? "" : "grid grid-cols-2 gap-4"}>
             <div>
-              <Label>Start Date *</Label>
+              <Label>{isHalfDay ? "Date *" : "Start Date *"}</Label>
               <Input type="date" max="9999-12-31" value={form.startDate} onChange={e => set("startDate", e.target.value)} className="mt-1" />
             </div>
-            <div>
-              <Label>{form.leaveDuration === "full_day" ? "End Date *" : "Date *"}</Label>
-              <Input type="date" max="9999-12-31" value={form.endDate} onChange={e => set("endDate", e.target.value)} className="mt-1" />
-            </div>
+            {!isHalfDay && (
+              <div>
+                <Label>End Date *</Label>
+                <Input type="date" max="9999-12-31" value={form.endDate} onChange={e => set("endDate", e.target.value)} className="mt-1" />
+              </div>
+            )}
           </div>
+
+          {sick && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>Sick leave <strong>cannot be applied in advance</strong> without a medical document. If the start date is a future date, a medical document link is required.</span>
+            </div>
+          )}
+
+          {isAdvanceSick && (
+            <div>
+              <Label>Medical Document <span className="text-destructive">*</span></Label>
+              <Input
+                placeholder="Paste a link to your medical document (e.g. Google Drive, email scan)"
+                value={form.medicalDocumentUrl}
+                onChange={e => set("medicalDocumentUrl", e.target.value)}
+                className="mt-1"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Required for advance sick leave. Share a Google Drive link or any accessible document URL.</p>
+            </div>
+          )}
+
           <div><Label>Reason</Label><Textarea value={form.reason} onChange={e => set("reason", e.target.value)} className="mt-1" rows={3} /></div>
         </div>
         <DialogFooter>
@@ -86,11 +122,20 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
               if (!form.employeeId) { toast.error("Please select an employee"); return; }
               if (!form.leaveTypeId) { toast.error("Please select a leave type"); return; }
               if (!form.startDate) { toast.error("Start date is required"); return; }
-              const isHalfDay = form.leaveDuration !== "full_day";
-              const endDate = isHalfDay ? form.startDate : form.endDate;
               if (!isHalfDay && !form.endDate) { toast.error("End date is required"); return; }
-              if (!isHalfDay && new Date(endDate) < new Date(form.startDate)) { toast.error("End date must be after start date"); return; }
-              mutation.mutate({ ...form, endDate, isHalfDay, halfDayPeriod: isHalfDay ? form.leaveDuration : undefined });
+              if (!isHalfDay && new Date(form.endDate) < new Date(form.startDate)) { toast.error("End date must be after start date"); return; }
+              if (isAdvanceSick && !form.medicalDocumentUrl.trim()) { toast.error("Medical document is required for advance sick leave"); return; }
+              const endDate = isHalfDay ? form.startDate : form.endDate;
+              mutation.mutate({
+                employeeId: form.employeeId,
+                leaveTypeId: form.leaveTypeId,
+                startDate: form.startDate,
+                endDate,
+                reason: form.reason,
+                isHalfDay,
+                halfDayPeriod: isHalfDay ? form.leaveDuration : undefined,
+                medicalDocumentUrl: form.medicalDocumentUrl || undefined,
+              });
             }}
             disabled={mutation.isPending}
           >

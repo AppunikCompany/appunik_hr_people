@@ -160,14 +160,27 @@ router.get("/leave/requests", requireAuth, async (req, res) => {
   }
 });
 
+function isSickLeaveType(lt: { name: string; code: string } | undefined): boolean {
+  if (!lt) return false;
+  const name = lt.name.toLowerCase();
+  const code = lt.code.toLowerCase();
+  return name.includes("sick") || code === "sl" || code === "sick" || code === "sick_leave";
+}
+
 router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
   try {
-    const { employeeId: clientId, leaveTypeId, startDate, endDate, reason } = req.body as {
+    const {
+      employeeId: clientId, leaveTypeId, startDate, endDate, reason,
+      isHalfDay = false, halfDayPeriod, medicalDocumentUrl,
+    } = req.body as {
       employeeId?: string;
       leaveTypeId: string;
       startDate: string;
       endDate: string;
       reason: string;
+      isHalfDay?: boolean;
+      halfDayPeriod?: string;
+      medicalDocumentUrl?: string;
     };
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
@@ -183,6 +196,23 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
 
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, leaveTypeId));
+
+    // ── Sick Leave Rules ──
+    if (isSickLeaveType(lt)) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const isAdvance = start > today;
+
+      if (isAdvance && !medicalDocumentUrl?.trim()) {
+        res.status(400).json({
+          error: "Sick leave cannot be applied in advance without a medical document. Please attach a medical document (URL or reference) to proceed.",
+          code: "SICK_LEAVE_ADVANCE_DOC_REQUIRED",
+        });
+        return;
+      }
+    }
 
     // ── LV-09: Enforce leave policy rules ──
     const [policy] = await db.select().from(leavePoliciesTable).where(eq(leavePoliciesTable.leaveTypeId, leaveTypeId));
@@ -213,9 +243,8 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
       }
     }
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const days = countBusinessDays(start, end);
+    // ── Day count: half day = 0.5, otherwise count business days ──
+    const days = isHalfDay ? 0.5 : countBusinessDays(new Date(startDate), new Date(endDate));
 
     // ── LV-05: Auto-detect LOP when balance is exhausted ──
     const year = new Date().getFullYear();
@@ -225,7 +254,12 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
     const effectiveStatus = isLop ? "lop" : "pending";
 
     const lrId = crypto.randomUUID();
-    await db.insert(leaveRequestsTable).values({ id: lrId, employeeId, leaveTypeId, startDate, endDate, days, reason, status: effectiveStatus });
+    await db.insert(leaveRequestsTable).values({
+      id: lrId, employeeId, leaveTypeId, startDate, endDate, days,
+      isHalfDay, halfDayPeriod: halfDayPeriod ?? null,
+      medicalDocumentUrl: medicalDocumentUrl?.trim() || null,
+      reason, status: effectiveStatus,
+    });
     const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, lrId));
 
     fireAutomationEvent({
