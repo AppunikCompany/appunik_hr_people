@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Providers } from "./providers";
 import { Layout } from "@/components/Layout";
@@ -12,6 +13,16 @@ export const metadata: Metadata = {
 const clerkPublishableKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
 const clerkEnabled = !!clerkPublishableKey;
 
+function AppunikReportWidget() {
+  return (
+    <Script
+      src="https://report.appunik-team.com/widget.js"
+      data-site-token="fk9IZS7jOktbL8jtdz7VkCKXDFk11v-g6dypk0D0iEY"
+      strategy="afterInteractive"
+    />
+  );
+}
+
 export default function RootLayout({
   children,
 }: {
@@ -20,13 +31,8 @@ export default function RootLayout({
   if (!clerkEnabled) {
     return (
       <html lang="en">
-        <head>
-          <script
-            src="https://report.appunik-team.com/widget.js"
-            data-site-token="fk9IZS7jOktbL8jtdz7VkCKXDFk11v-g6dypk0D0iEY"
-          ></script>
-        </head>
         <body>
+          <AppunikReportWidget />
           <Providers clerkEnabled={false}>
             <div className="px-4 py-2 border-b border-border bg-muted text-xs text-muted-foreground">
               Running without Clerk auth. Set{" "}
@@ -42,13 +48,8 @@ export default function RootLayout({
 
   return (
     <html lang="en">
-      <head>
-        <script
-          src="https://report.appunik-team.com/widget.js"
-          data-site-token="fk9IZS7jOktbL8jtdz7VkCKXDFk11v-g6dypk0D0iEY"
-        ></script>
-      </head>
       <body>
+        <AppunikReportWidget />
         <ClerkProvider publishableKey={clerkPublishableKey}>
           <Providers clerkEnabled>
             <Layout clerkEnabled>{children}</Layout>
