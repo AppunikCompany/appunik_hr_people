@@ -54,3 +54,4 @@ Thumbs.db
 .local/
 /apps/next-app/.next
 /apps/next-app/.next
+backup/next-app/.next/
