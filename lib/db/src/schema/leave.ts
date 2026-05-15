@@ -44,6 +44,7 @@ export const leaveRequestsTable = mysqlTable("people_leave_requests", {
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   managerComment: text("manager_comment"),
   approvedById: varchar("approved_by_id", { length: 36 }),
+  approvedByRole: varchar("approved_by_role", { length: 30 }), // "manager" | "hr_admin" | "super_admin"
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });

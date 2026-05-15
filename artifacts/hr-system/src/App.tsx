@@ -94,6 +94,8 @@ function Router() {
               <Route path="/leave/calendar" component={Leave} />
               <Route path="/leave/balances" component={Leave} />
               <Route path="/leave/compoff" component={Leave} />
+              <Route path="/leave/holidays" component={Leave} />
+              <Route path="/leave/reports" component={Leave} />
               <Route path="/onboarding" component={Onboarding} />
               <Route path="/assets" component={Assets} />
               <Route path="/performance" component={Performance} />

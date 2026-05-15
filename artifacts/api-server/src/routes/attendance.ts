@@ -297,6 +297,24 @@ router.post("/attendance/wfh/:id/approve", requireAuth, requireRole("super_admin
   }
 });
 
+router.patch("/holidays/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const { id } = req.params as { id: string };
+    const { name, date, type } = req.body as { name?: string; date?: string; type?: string };
+    const updateData: Record<string, any> = {};
+    if (name !== undefined) updateData.name = name.trim();
+    if (date !== undefined) updateData.date = date;
+    if (type !== undefined) updateData.type = type;
+    if (Object.keys(updateData).length === 0) { res.status(400).json({ error: "Nothing to update" }); return; }
+    await db.update(holidaysTable).set(updateData).where(eq(holidaysTable.id, id));
+    const [holiday] = await db.select().from(holidaysTable).where(eq(holidaysTable.id, id));
+    if (!holiday) { res.status(404).json({ error: "Holiday not found" }); return; }
+    res.json(holiday);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 router.delete("/holidays/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     await db.delete(holidaysTable).where(eq(holidaysTable.id, (req.params.id as string)));

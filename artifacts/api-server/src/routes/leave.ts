@@ -7,15 +7,16 @@ import {
   compoffsTable,
   leavePoliciesTable,
   employeesTable,
+  holidaysTable,
 } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, gte, lte } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
 import { resolveEmployeeId } from "../lib/ownership";
 
 const router: IRouter = Router();
 
-function countBusinessDays(start: Date, end: Date): number {
+function countBusinessDays(start: Date, end: Date, holidayDates: Set<string> = new Set()): number {
   let count = 0;
   const cur = new Date(start);
   cur.setHours(0, 0, 0, 0);
@@ -23,10 +24,17 @@ function countBusinessDays(start: Date, end: Date): number {
   endDay.setHours(0, 0, 0, 0);
   while (cur <= endDay) {
     const dow = cur.getDay();
-    if (dow !== 0 && dow !== 6) count++;
+    const dateStr = cur.toISOString().split("T")[0];
+    if (dow !== 0 && dow !== 6 && !holidayDates.has(dateStr)) count++;
     cur.setDate(cur.getDate() + 1);
   }
   return count;
+}
+
+async function fetchHolidayDates(startDate: string, endDate: string): Promise<Set<string>> {
+  const holidays = await db.select({ date: holidaysTable.date }).from(holidaysTable)
+    .where(and(gte(holidaysTable.date, startDate), lte(holidaysTable.date, endDate)));
+  return new Set(holidays.map((h) => h.date));
 }
 
 router.get("/leave/types", requireAuth, async (_req, res) => {
@@ -243,8 +251,9 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
       }
     }
 
-    // ── Day count: half day = 0.5, otherwise count business days ──
-    const days = isHalfDay ? 0.5 : countBusinessDays(new Date(startDate), new Date(endDate));
+    // ── Day count: half day = 0.5, otherwise count business days (excluding holidays) ──
+    const holidayDates = isHalfDay ? new Set<string>() : await fetchHolidayDates(startDate, endDate);
+    const days = isHalfDay ? 0.5 : countBusinessDays(new Date(startDate), new Date(endDate), holidayDates);
 
     // ── LV-05: Auto-detect LOP when balance is exhausted ──
     const year = new Date().getFullYear();
@@ -282,13 +291,24 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
 
 router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
-    const { comment } = req.body as { comment?: string };
+    const { comment, approvedByRole } = req.body as { comment?: string; approvedByRole?: string };
     const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!["pending", "lop"].includes(existing.status)) {
+      res.status(400).json({ error: "Only pending leave requests can be approved" }); return;
+    }
+
+    const approverId = req.user!.id;
+    const approverRole = approvedByRole ?? req.user!.role ?? "manager";
 
     // LOP leaves stay as "lop" when approved — preserves LOP info for payroll and reports
     const approvedStatus = existing.status === "lop" ? "lop" : "approved";
-    await db.update(leaveRequestsTable).set({ status: approvedStatus, managerComment: comment }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    await db.update(leaveRequestsTable).set({
+      status: approvedStatus,
+      managerComment: comment,
+      approvedById: approverId,
+      approvedByRole: approverRole,
+    }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
     const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
 
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, request.employeeId));
@@ -326,11 +346,13 @@ router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin
       variables: { leaveType: lt?.name ?? "", startDate: request.startDate, endDate: request.endDate, days: String(request.days) },
     }).catch(console.error);
 
+    // Lookup approver name
+    const [approver] = approverId ? await db.select().from(employeesTable).where(eq(employeesTable.userId, approverId)) : [null];
     res.json({
       ...request,
       employeeName: emp ? `${emp.firstName} ${emp.lastName}` : "",
       leaveTypeName: lt?.name ?? "",
-      approvedByName: null,
+      approvedByName: approver ? `${approver.firstName} ${approver.lastName}` : null,
     });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -339,8 +361,20 @@ router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin
 
 router.post("/leave/requests/:id/reject", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res) => {
   try {
-    const { comment } = req.body as { comment?: string };
-    await db.update(leaveRequestsTable).set({ status: "rejected", managerComment: comment }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    const { comment, approvedByRole } = req.body as { comment?: string; approvedByRole?: string };
+    const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!["pending", "lop"].includes(existing.status)) {
+      res.status(400).json({ error: "Only pending leave requests can be rejected" }); return;
+    }
+    const approverId = req.user!.id;
+    const approverRole = approvedByRole ?? req.user!.role ?? "manager";
+    await db.update(leaveRequestsTable).set({
+      status: "rejected",
+      managerComment: comment,
+      approvedById: approverId,
+      approvedByRole: approverRole,
+    }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
     const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
 
     if (!request) { res.status(404).json({ error: "Not found" }); return; }
@@ -354,12 +388,71 @@ router.post("/leave/requests/:id/reject", requireAuth, requireRole("super_admin"
       variables: { leaveType: lt?.name ?? "", startDate: request.startDate, endDate: request.endDate },
     }).catch(console.error);
 
+    const [approver] = approverId ? await db.select().from(employeesTable).where(eq(employeesTable.userId, approverId)) : [null];
     res.json({
       ...request,
       employeeName: emp ? `${emp.firstName} ${emp.lastName}` : "",
       leaveTypeName: lt?.name ?? "",
-      approvedByName: null,
+      approvedByName: approver ? `${approver.firstName} ${approver.lastName}` : null,
     });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Cancel a pending leave request ──
+router.delete("/leave/requests/:id", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!["pending", "lop"].includes(existing.status)) {
+      res.status(400).json({ error: "Only pending leave requests can be cancelled" }); return;
+    }
+    // Employees can only cancel their own; privileged roles can cancel any
+    const userId = req.user!.id;
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+    const isPrivileged = ["super_admin", "hr_admin", "it_admin", "manager"].includes(req.user!.role ?? "");
+    if (!isPrivileged && emp?.id !== existing.employeeId) {
+      res.status(403).json({ error: "Access denied" }); return;
+    }
+    await db.update(leaveRequestsTable).set({ status: "cancelled" }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Edit a pending leave request ──
+router.patch("/leave/requests/:id", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (!["pending", "lop"].includes(existing.status)) {
+      res.status(400).json({ error: "Only pending leave requests can be edited" }); return;
+    }
+    const userId = req.user!.id;
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+    const isPrivileged = ["super_admin", "hr_admin", "it_admin", "manager"].includes(req.user!.role ?? "");
+    if (!isPrivileged && emp?.id !== existing.employeeId) {
+      res.status(403).json({ error: "Access denied" }); return;
+    }
+
+    const { startDate, endDate, reason, isHalfDay, halfDayPeriod } = req.body as {
+      startDate?: string; endDate?: string; reason?: string; isHalfDay?: boolean; halfDayPeriod?: string;
+    };
+    const newStart = startDate ?? existing.startDate;
+    const newEnd = endDate ?? existing.endDate;
+    const newIsHalfDay = isHalfDay ?? existing.isHalfDay;
+    const holidayDates = newIsHalfDay ? new Set<string>() : await fetchHolidayDates(newStart, newEnd);
+    const days = newIsHalfDay ? 0.5 : countBusinessDays(new Date(newStart), new Date(newEnd), holidayDates);
+
+    await db.update(leaveRequestsTable).set({
+      startDate: newStart, endDate: newEnd, reason: reason ?? existing.reason,
+      isHalfDay: newIsHalfDay, halfDayPeriod: halfDayPeriod ?? existing.halfDayPeriod, days,
+    }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+
+    const [updated] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    res.json(updated);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

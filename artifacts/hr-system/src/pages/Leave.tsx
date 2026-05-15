@@ -10,9 +10,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { formatDate } from "@/lib/utils";
-import { Plus, Check, X, Calendar, Info } from "lucide-react";
+import { Plus, Check, X, Calendar, Info, Edit2, Download, Trash2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 function isSickLeave(types: any[], leaveTypeId: string): boolean {
@@ -23,6 +23,7 @@ function isSickLeave(types: any[], leaveTypeId: string): boolean {
   return name.includes("sick") || code === "sl" || code === "sick" || code === "sick_leave";
 }
 
+// ─── Apply Leave Dialog ────────────────────────────────────────────────────────
 function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [form, setForm] = useState({ employeeId: "", leaveTypeId: "", startDate: "", endDate: "", reason: "", leaveDuration: "full_day", medicalDocumentUrl: "" });
   const { data: employees } = useEmployees();
@@ -147,6 +148,134 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
   );
 }
 
+// ─── Approve Dialog ────────────────────────────────────────────────────────────
+function ApproveDialog({ req, onClose }: { req: any; onClose: () => void }) {
+  const [approvedByRole, setApprovedByRole] = useState("manager");
+  const [comment, setComment] = useState("");
+  const qc = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      fetchApi(`/leave/requests/${req.id}/approve`, {
+        method: "POST",
+        body: JSON.stringify({ approvedByRole, comment: comment.trim() || undefined }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leave-requests"] });
+      toast.success("Leave approved successfully");
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={!!req} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Approve Leave Request</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{req?.employeeName}</span> — {req?.leaveTypeName}
+            <br />
+            {req && <span className="text-xs">{formatDate(req.startDate)} – {formatDate(req.endDate)} ({req.days} {req.days === 1 ? "day" : "days"})</span>}
+          </div>
+          <div>
+            <Label>Approving as *</Label>
+            <Select value={approvedByRole} onValueChange={setApprovedByRole}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manager">Manager</SelectItem>
+                <SelectItem value="hr_admin">HR Admin</SelectItem>
+                <SelectItem value="super_admin">Super Admin</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1">Select the capacity in which you are approving this leave.</p>
+          </div>
+          <div>
+            <Label>Comment (optional)</Label>
+            <Textarea
+              value={comment}
+              onChange={e => setComment(e.target.value)}
+              placeholder="Add a note for the employee..."
+              className="mt-1"
+              rows={2}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending} className="bg-green-600 hover:bg-green-700 text-white">
+            {mutation.isPending ? "Approving..." : "Approve"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Reject Dialog ────────────────────────────────────────────────────────────
+function RejectDialog({ req, onClose }: { req: any; onClose: () => void }) {
+  const [approvedByRole, setApprovedByRole] = useState("manager");
+  const [comment, setComment] = useState("");
+  const qc = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      fetchApi(`/leave/requests/${req.id}/reject`, {
+        method: "POST",
+        body: JSON.stringify({ approvedByRole, comment: comment.trim() || undefined }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leave-requests"] });
+      toast.success("Leave rejected");
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={!!req} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Reject Leave Request</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{req?.employeeName}</span> — {req?.leaveTypeName}
+            <br />
+            {req && <span className="text-xs">{formatDate(req.startDate)} – {formatDate(req.endDate)} ({req.days} {req.days === 1 ? "day" : "days"})</span>}
+          </div>
+          <div>
+            <Label>Rejecting as *</Label>
+            <Select value={approvedByRole} onValueChange={setApprovedByRole}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manager">Manager</SelectItem>
+                <SelectItem value="hr_admin">HR Admin</SelectItem>
+                <SelectItem value="super_admin">Super Admin</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>Reason for rejection (optional)</Label>
+            <Textarea
+              value={comment}
+              onChange={e => setComment(e.target.value)}
+              placeholder="Provide a reason for the employee..."
+              className="mt-1"
+              rows={2}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending} variant="destructive">
+            {mutation.isPending ? "Rejecting..." : "Reject"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Calendar Tab ──────────────────────────────────────────────────────────────
 function LeaveCalendarTab() {
   const now = new Date();
   const [month, setMonth] = useState(now.getMonth() + 1);
@@ -216,6 +345,7 @@ function LeaveCalendarTab() {
   );
 }
 
+// ─── Balances Tab ──────────────────────────────────────────────────────────────
 function LeaveBalancesTab() {
   const { data: employees } = useEmployees();
   const [selectedEmpId, setSelectedEmpId] = useState<string>("");
@@ -268,6 +398,7 @@ function LeaveBalancesTab() {
   );
 }
 
+// ─── Comp-Off Tab ──────────────────────────────────────────────────────────────
 function CompOffTab() {
   const { data: requests, isLoading } = useLeaveRequests();
   const compoffRequests = (requests ?? []).filter((r: any) =>
@@ -314,10 +445,304 @@ function CompOffTab() {
   );
 }
 
+// ─── Holiday Management Tab ────────────────────────────────────────────────────
+function HolidayDialog({
+  open, onClose, existing
+}: { open: boolean; onClose: () => void; existing?: any }) {
+  const [name, setName] = useState(existing?.name ?? "");
+  const [date, setDate] = useState(existing?.date ?? "");
+  const [type, setType] = useState(existing?.type ?? "public");
+  const qc = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      if (existing) {
+        return fetchApi(`/holidays/${existing.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim(), date, type }) });
+      }
+      return fetchApi("/holidays", { method: "POST", body: JSON.stringify({ name: name.trim(), date, type }) });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["holidays"] });
+      onClose();
+      toast.success(existing ? "Holiday updated" : "Holiday added");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  // Reset form when dialog opens
+  const handleOpen = (o: boolean) => { if (!o) onClose(); };
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpen}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{existing ? "Edit Holiday" : "Add Holiday"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <Label>Holiday Name *</Label>
+            <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Independence Day" className="mt-1" />
+          </div>
+          <div>
+            <Label>Date *</Label>
+            <Input type="date" max="9999-12-31" value={date} onChange={e => setDate(e.target.value)} className="mt-1" />
+          </div>
+          <div>
+            <Label>Type</Label>
+            <Select value={type} onValueChange={setType}>
+              <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="public">Public Holiday</SelectItem>
+                <SelectItem value="optional">Optional Holiday</SelectItem>
+                <SelectItem value="restricted">Restricted Holiday</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => {
+              if (!name.trim()) { toast.error("Holiday name is required"); return; }
+              if (!date) { toast.error("Date is required"); return; }
+              mutation.mutate();
+            }}
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending ? "Saving..." : existing ? "Update" : "Add"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function HolidaysTab() {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [addOpen, setAddOpen] = useState(false);
+  const [editTarget, setEditTarget] = useState<any>(null);
+  const qc = useQueryClient();
+
+  const { data: holidays, isLoading } = useQuery({
+    queryKey: ["holidays", year],
+    queryFn: () => fetchApi(`/holidays?year=${year}`),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => fetchApi(`/holidays/${id}`, { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["holidays"] }); toast.success("Holiday deleted"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const typeLabel: Record<string, string> = {
+    public: "Public",
+    optional: "Optional",
+    restricted: "Restricted",
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <Select value={String(year)} onValueChange={v => setYear(Number(v))}>
+          <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {[year-1, year, year+1].map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Button size="sm" onClick={() => setAddOpen(true)}>
+          <Plus className="w-4 h-4 mr-1" /> Add Holiday
+        </Button>
+      </div>
+
+      <div className="bg-white border border-border rounded-lg shadow-sm overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
+              <th className="text-left px-5 py-3">Holiday</th>
+              <th className="text-left px-5 py-3">Date</th>
+              <th className="text-left px-5 py-3">Day</th>
+              <th className="text-left px-5 py-3">Type</th>
+              <th className="text-left px-5 py-3">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
+            ) : !holidays || (holidays as any[]).length === 0 ? (
+              <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">
+                <Calendar className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
+                No holidays configured for {year}
+              </td></tr>
+            ) : (holidays as any[])
+                .slice()
+                .sort((a: any, b: any) => a.date.localeCompare(b.date))
+                .map((h: any, i: number) => {
+                  const d = new Date(h.date + "T00:00:00");
+                  const dayName = d.toLocaleDateString("en-IN", { weekday: "long" });
+                  return (
+                    <tr key={h.id} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
+                      <td className="px-5 py-3 font-medium text-foreground">{h.name}</td>
+                      <td className="px-5 py-3 text-muted-foreground text-xs">{formatDate(h.date)}</td>
+                      <td className="px-5 py-3 text-muted-foreground text-xs">{dayName}</td>
+                      <td className="px-5 py-3">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700">
+                          {typeLabel[h.type] ?? h.type ?? "Public"}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3">
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditTarget(h)}>
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            size="sm" variant="ghost"
+                            className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50"
+                            onClick={() => {
+                              if (confirm(`Delete "${h.name}"?`)) deleteMutation.mutate(h.id);
+                            }}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+          </tbody>
+        </table>
+      </div>
+
+      {addOpen && <HolidayDialog open={addOpen} onClose={() => setAddOpen(false)} />}
+      {editTarget && (
+        <HolidayDialog
+          open={!!editTarget}
+          onClose={() => setEditTarget(null)}
+          existing={editTarget}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Reports Tab ───────────────────────────────────────────────────────────────
+function LeaveReportsTab() {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [statusFilter, setStatusFilter] = useState("all");
+  const { data: requests, isLoading } = useLeaveRequests();
+
+  const filtered = (requests ?? []).filter((r: any) => {
+    const y = new Date(r.startDate).getFullYear();
+    return y === year && (statusFilter === "all" || r.status === statusFilter);
+  });
+
+  const handleDownload = () => {
+    const base = (window as any).__API_BASE__ ?? "";
+    window.open(`${base}/api/leave/export?year=${year}`, "_blank");
+  };
+
+  // Aggregate stats
+  const stats = filtered.reduce(
+    (acc: any, r: any) => {
+      acc.total++;
+      if (r.status === "approved") { acc.approved++; acc.days += r.days; }
+      else if (r.status === "pending") acc.pending++;
+      else if (r.status === "rejected") acc.rejected++;
+      return acc;
+    },
+    { total: 0, approved: 0, pending: 0, rejected: 0, days: 0 }
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Select value={String(year)} onValueChange={v => setYear(Number(v))}>
+            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {[year-1, year, year+1].map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+              <SelectItem value="lop">LOP</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <Button size="sm" variant="outline" onClick={handleDownload}>
+          <Download className="w-4 h-4 mr-1" /> Export CSV
+        </Button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-4 gap-4">
+        {[
+          { label: "Total Requests", value: stats.total, color: "text-foreground" },
+          { label: "Approved", value: stats.approved, color: "text-green-600" },
+          { label: "Pending", value: stats.pending, color: "text-amber-600" },
+          { label: "Days Taken", value: stats.days, color: "text-blue-600" },
+        ].map(card => (
+          <div key={card.label} className="bg-white border border-border rounded-lg px-5 py-4 shadow-sm">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">{card.label}</p>
+            <p className={`text-2xl font-bold mt-1 ${card.color}`}>{card.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Leave history table */}
+      <div className="bg-white border border-border rounded-lg shadow-sm overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
+              <th className="text-left px-5 py-3">Employee</th>
+              <th className="text-left px-5 py-3">Leave Type</th>
+              <th className="text-left px-5 py-3">Period</th>
+              <th className="text-left px-5 py-3 text-center">Days</th>
+              <th className="text-left px-5 py-3">Status</th>
+              <th className="text-left px-5 py-3">Approved By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">No leave records found</td></tr>
+            ) : filtered.map((req: any, i: number) => (
+              <tr key={req.id} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
+                <td className="px-5 py-3 font-medium text-foreground">{req.employeeName}</td>
+                <td className="px-5 py-3 text-muted-foreground">{req.leaveTypeName}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">
+                  {formatDate(req.startDate)} – {formatDate(req.endDate)}
+                </td>
+                <td className="px-5 py-3 text-center">{req.days}</td>
+                <td className="px-5 py-3"><StatusBadge status={req.status} /></td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">
+                  {req.approvedByName
+                    ? <span>{req.approvedByName} <span className="text-muted-foreground/60">({req.approvedByRole?.replace("_", " ")})</span></span>
+                    : "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Leave Page ───────────────────────────────────────────────────────────
 export default function Leave() {
   const [location] = useLocation();
   const [status, setStatus] = useState("");
   const [applyOpen, setApplyOpen] = useState(false);
+  const [approveTarget, setApproveTarget] = useState<any>(null);
+  const [rejectTarget, setRejectTarget] = useState<any>(null);
   const { data: requests, isLoading } = useLeaveRequests(status ? { status } : undefined);
   const qc = useQueryClient();
 
@@ -326,20 +751,25 @@ export default function Leave() {
     "/leave/calendar": "calendar",
     "/leave/balances": "balances",
     "/leave/compoff": "compoff",
+    "/leave/holidays": "holidays",
+    "/leave/reports": "reports",
   };
   const activeTab = tabFromPath[location] ?? "requests";
 
-  const approve = useMutation({
-    mutationFn: (id: string) => fetchApi(`/leave/requests/${id}/approve`, { method: "POST", body: JSON.stringify({}) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-requests"] }); toast.success("Leave approved"); },
+  const cancelMutation = useMutation({
+    mutationFn: (id: string) => fetchApi(`/leave/requests/${id}`, { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-requests"] }); toast.success("Leave request cancelled"); },
     onError: (e: any) => toast.error(e.message),
   });
 
-  const reject = useMutation({
-    mutationFn: (id: string) => fetchApi(`/leave/requests/${id}/reject`, { method: "POST", body: JSON.stringify({}) }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-requests"] }); toast.success("Leave rejected"); },
-    onError: (e: any) => toast.error(e.message),
-  });
+  const tabItems = [
+    { value: "requests", label: "Requests", path: "/leave" },
+    { value: "calendar", label: "Calendar", path: "/leave/calendar" },
+    { value: "balances", label: "Balances", path: "/leave/balances" },
+    { value: "compoff", label: "Comp-Off", path: "/leave/compoff" },
+    { value: "holidays", label: "Holidays", path: "/leave/holidays" },
+    { value: "reports", label: "Reports", path: "/leave/reports" },
+  ];
 
   return (
     <PageContainer>
@@ -350,6 +780,17 @@ export default function Leave() {
       />
 
       <Tabs value={activeTab}>
+        <TabsList className="mb-4">
+          {tabItems.map(tab => (
+            <TabsTrigger
+              key={tab.value}
+              value={tab.value}
+              onClick={() => window.history.pushState({}, "", tab.path)}
+            >
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
 
         <TabsContent value="requests">
           <div className="bg-white border border-border rounded-lg shadow-sm">
@@ -361,6 +802,8 @@ export default function Leave() {
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="approved">Approved</SelectItem>
                   <SelectItem value="rejected">Rejected</SelectItem>
+                  <SelectItem value="lop">LOP</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -375,7 +818,7 @@ export default function Leave() {
                     <th className="text-left px-5 py-3">Days</th>
                     <th className="text-left px-5 py-3">Reason</th>
                     <th className="text-left px-5 py-3">Status</th>
-                    <th className="text-left px-5 py-3 min-w-[100px]">Actions</th>
+                    <th className="text-left px-5 py-3 min-w-[120px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -386,7 +829,10 @@ export default function Leave() {
                   ) : requests.map((req: any, i: number) => (
                     <tr key={req.id} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
                       <td className="px-5 py-3 font-medium text-foreground">{req.employeeName}</td>
-                      <td className="px-5 py-3 text-muted-foreground">{req.leaveTypeName}</td>
+                      <td className="px-5 py-3 text-muted-foreground">
+                        {req.leaveTypeName}
+                        {req.isHalfDay && <span className="ml-1 text-xs text-blue-600">(Half Day)</span>}
+                      </td>
                       <td className="px-5 py-3 text-muted-foreground text-xs">
                         {formatDate(req.startDate)} – {formatDate(req.endDate)}
                       </td>
@@ -394,13 +840,35 @@ export default function Leave() {
                       <td className="px-5 py-3 text-muted-foreground max-w-xs truncate">{req.reason ?? "—"}</td>
                       <td className="px-5 py-3"><StatusBadge status={req.status} /></td>
                       <td className="px-5 py-3">
-                        {req.status === "pending" && (
+                        {(req.status === "pending" || req.status === "lop") && (
                           <div className="flex gap-1">
-                            <Button size="sm" variant="outline" title="Approve" className="text-green-600 hover:text-green-700 h-7 px-2" onClick={() => approve.mutate(req.id)}>
+                            <Button
+                              size="sm" variant="outline"
+                              title="Approve"
+                              className="text-green-600 hover:text-green-700 hover:bg-green-50 h-7 px-2"
+                              onClick={() => setApproveTarget(req)}
+                            >
                               <Check className="w-3.5 h-3.5" />
                             </Button>
-                            <Button size="sm" variant="outline" title="Reject" className="text-red-500 hover:text-red-600 h-7 px-2" onClick={() => reject.mutate(req.id)}>
+                            <Button
+                              size="sm" variant="outline"
+                              title="Reject"
+                              className="text-red-500 hover:text-red-600 hover:bg-red-50 h-7 px-2"
+                              onClick={() => setRejectTarget(req)}
+                            >
                               <X className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              size="sm" variant="ghost"
+                              title="Cancel Request"
+                              className="text-muted-foreground hover:text-foreground h-7 px-2"
+                              onClick={() => {
+                                if (confirm("Cancel this leave request?")) {
+                                  cancelMutation.mutate(req.id);
+                                }
+                              }}
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
                             </Button>
                           </div>
                         )}
@@ -424,9 +892,19 @@ export default function Leave() {
         <TabsContent value="compoff">
           <CompOffTab />
         </TabsContent>
+
+        <TabsContent value="holidays">
+          <HolidaysTab />
+        </TabsContent>
+
+        <TabsContent value="reports">
+          <LeaveReportsTab />
+        </TabsContent>
       </Tabs>
 
       <ApplyLeaveDialog open={applyOpen} onClose={() => setApplyOpen(false)} />
+      {approveTarget && <ApproveDialog req={approveTarget} onClose={() => setApproveTarget(null)} />}
+      {rejectTarget && <RejectDialog req={rejectTarget} onClose={() => setRejectTarget(null)} />}
     </PageContainer>
   );
 }
