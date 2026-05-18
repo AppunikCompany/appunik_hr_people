@@ -153,6 +153,12 @@ function ApproveDialog({ req, onClose }: { req: any; onClose: () => void }) {
   const [approvedByRole, setApprovedByRole] = useState("manager");
   const [comment, setComment] = useState("");
   const qc = useQueryClient();
+  const { data: employees } = useEmployees();
+
+  // Find this employee's reporting manager
+  const employee = (employees as any[] ?? []).find((e: any) => e.id === req?.employeeId);
+  const manager = (employees as any[] ?? []).find((e: any) => e.id === employee?.reportingManagerId);
+  const managerName = manager ? `${manager.firstName} ${manager.lastName}` : "Manager";
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -183,9 +189,8 @@ function ApproveDialog({ req, onClose }: { req: any; onClose: () => void }) {
             <Select value={approvedByRole} onValueChange={setApprovedByRole}>
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="manager">Manager</SelectItem>
+                <SelectItem value="manager">{managerName}</SelectItem>
                 <SelectItem value="hr_admin">HR Admin</SelectItem>
-                <SelectItem value="super_admin">Super Admin</SelectItem>
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground mt-1">Select the capacity in which you are approving this leave.</p>
@@ -217,6 +222,12 @@ function RejectDialog({ req, onClose }: { req: any; onClose: () => void }) {
   const [approvedByRole, setApprovedByRole] = useState("manager");
   const [comment, setComment] = useState("");
   const qc = useQueryClient();
+  const { data: employees } = useEmployees();
+
+  // Find this employee's reporting manager
+  const employee = (employees as any[] ?? []).find((e: any) => e.id === req?.employeeId);
+  const manager = (employees as any[] ?? []).find((e: any) => e.id === employee?.reportingManagerId);
+  const managerName = manager ? `${manager.firstName} ${manager.lastName}` : "Manager";
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -247,9 +258,8 @@ function RejectDialog({ req, onClose }: { req: any; onClose: () => void }) {
             <Select value={approvedByRole} onValueChange={setApprovedByRole}>
               <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="manager">Manager</SelectItem>
+                <SelectItem value="manager">{managerName}</SelectItem>
                 <SelectItem value="hr_admin">HR Admin</SelectItem>
-                <SelectItem value="super_admin">Super Admin</SelectItem>
               </SelectContent>
             </Select>
           </div>
