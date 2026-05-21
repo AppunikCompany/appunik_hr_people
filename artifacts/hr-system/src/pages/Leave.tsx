@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useLeaveRequests, useLeaveTypes, useEmployees, useLeaveBalances, useCurrentUser, fetchApi } from "@/hooks/useApi";
+import { useLeaveRequests, useLeaveTypes, useEmployees, useLeaveBalances, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -753,22 +753,8 @@ export default function Leave() {
   const [applyOpen, setApplyOpen] = useState(false);
   const [approveTarget, setApproveTarget] = useState<any>(null);
   const [rejectTarget, setRejectTarget] = useState<any>(null);
-  const [clearConfirm, setClearConfirm] = useState(false);
   const { data: requests, isLoading } = useLeaveRequests(status ? { status } : undefined);
-  const { data: currentUser } = useCurrentUser();
-  const isSuperAdmin = currentUser?.role === "super_admin";
   const qc = useQueryClient();
-
-  const clearAllMutation = useMutation({
-    mutationFn: () => fetchApi("/leave/admin/clear-all", { method: "DELETE" }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["leave-requests"] });
-      qc.invalidateQueries({ queryKey: ["leave-balances"] });
-      setClearConfirm(false);
-      toast.success("All leave data cleared and balances reset");
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
 
   const tabFromPath: Record<string, string> = {
     "/leave": "requests",
@@ -800,16 +786,7 @@ export default function Leave() {
       <PageHeader
         title="Leave Management"
         breadcrumbs={[{ label: "Leave" }]}
-        actions={
-          <div className="flex items-center gap-2">
-            {isSuperAdmin && (
-              <Button size="sm" variant="outline" className="text-red-500 hover:text-red-600 border-red-200 hover:border-red-300 hover:bg-red-50" onClick={() => setClearConfirm(true)}>
-                <Trash2 className="w-4 h-4 mr-1" /> Clear All Data
-              </Button>
-            )}
-            <Button size="sm" onClick={() => setApplyOpen(true)}><Plus className="w-4 h-4 mr-1" /> Apply Leave</Button>
-          </div>
-        }
+        actions={<Button size="sm" onClick={() => setApplyOpen(true)}><Plus className="w-4 h-4 mr-1" /> Apply Leave</Button>}
       />
 
       <Tabs value={activeTab}>
@@ -939,28 +916,7 @@ export default function Leave() {
       {approveTarget && <ApproveDialog req={approveTarget} onClose={() => setApproveTarget(null)} />}
       {rejectTarget && <RejectDialog req={rejectTarget} onClose={() => setRejectTarget(null)} />}
 
-      {/* Clear all data — super_admin only */}
-      <Dialog open={clearConfirm} onOpenChange={setClearConfirm}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Clear all leave data?</DialogTitle></DialogHeader>
-          <div className="py-2 space-y-3">
-            <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-              This will permanently delete <strong>all leave requests</strong> and reset <strong>all leave balances</strong> back to their allocated amounts. This cannot be undone.
-            </div>
-            <p className="text-sm text-muted-foreground">Use this only to clear test data before going live.</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setClearConfirm(false)}>Cancel</Button>
-            <Button
-              variant="destructive"
-              onClick={() => clearAllMutation.mutate()}
-              disabled={clearAllMutation.isPending}
-            >
-              {clearAllMutation.isPending ? "Clearing..." : "Yes, clear everything"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+
     </PageContainer>
   );
 }
