@@ -551,4 +551,23 @@ router.get("/leave/export", requireAuth, requireRole("super_admin", "hr_admin"),
   }
 });
 
+// ── Admin: clear all leave request data (super_admin only) ──
+router.delete("/leave/admin/clear-all", requireAuth, requireRole("super_admin"), async (_req, res): Promise<void> => {
+  try {
+    // Delete all leave requests
+    await db.delete(leaveRequestsTable);
+    // Reset all leave balances: used → 0, balance → allocated (balance + used)
+    const allBalances = await db.select().from(leaveBalancesTable);
+    for (const b of allBalances) {
+      const allocated = b.balance + b.used;
+      await db.update(leaveBalancesTable)
+        .set({ used: 0, balance: allocated })
+        .where(eq(leaveBalancesTable.id, b.id));
+    }
+    res.json({ ok: true, deletedRequests: true, balancesReset: allBalances.length });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 export default router;
