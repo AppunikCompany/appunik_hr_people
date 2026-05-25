@@ -489,50 +489,100 @@ function LeaveCalendarTab() {
 
 // ─── Balances Tab ──────────────────────────────────────────────────────────────
 function LeaveBalancesTab() {
+  const { data: currentUser } = useCurrentUser();
+  const isPrivileged = ["super_admin", "hr_admin", "it_admin", "manager"].includes(currentUser?.role ?? "");
+
   const { data: employees } = useEmployees();
   const [selectedEmpId, setSelectedEmpId] = useState<string>("");
-  const { data: balances, isLoading } = useLeaveBalances(selectedEmpId || undefined);
+
+  // For employees: always load own balance automatically via their employeeId.
+  // For privileged roles: load based on dropdown selection.
+  const effectiveEmpId = isPrivileged ? selectedEmpId : (currentUser?.employeeId ?? "");
+  const { data: balances, isLoading } = useLeaveBalances(effectiveEmpId || undefined);
+
+  const balanceRows = (balances as any[] ?? []);
+  const totalAllocated = balanceRows.reduce((s: number, b: any) => s + b.used + b.balance, 0);
+  const totalUsed = balanceRows.reduce((s: number, b: any) => s + b.used, 0);
+  const totalRemaining = balanceRows.reduce((s: number, b: any) => s + b.balance, 0);
 
   return (
     <div>
+      {/* Privileged roles see an employee selector; employees see their own name as context */}
       <div className="mb-4">
-        <Select value={selectedEmpId || "_all"} onValueChange={v => setSelectedEmpId(v === "_all" ? "" : v)}>
-          <SelectTrigger className="w-64"><SelectValue placeholder="Select employee..." /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="_all">Select an employee</SelectItem>
-            {employees?.map((e: any) => (
-              <SelectItem key={e.id} value={e.id}>{e.firstName} {e.lastName}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {isPrivileged ? (
+          <Select value={selectedEmpId || "_all"} onValueChange={v => setSelectedEmpId(v === "_all" ? "" : v)}>
+            <SelectTrigger className="w-64"><SelectValue placeholder="Select employee..." /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="_all">Select an employee</SelectItem>
+              {employees?.map((e: any) => (
+                <SelectItem key={e.id} value={e.id}>{e.firstName} {e.lastName}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          currentUser?.firstName && (
+            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-secondary rounded-md text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">{currentUser.firstName} {currentUser.lastName}</span>
+              <span>— your leave balance for {new Date().getFullYear()}</span>
+            </div>
+          )
+        )}
       </div>
+
       <div className="bg-white border border-border rounded-lg shadow-sm overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
               <th className="text-left px-5 py-3">Leave Type</th>
               <th className="text-left px-5 py-3">Year</th>
-              <th className="text-left px-5 py-3 text-center">Allocated</th>
-              <th className="text-left px-5 py-3 text-center">Used</th>
-              <th className="text-left px-5 py-3 text-center">Remaining</th>
+              <th className="text-center px-5 py-3">Allocated</th>
+              <th className="text-center px-5 py-3">Used</th>
+              <th className="text-center px-5 py-3">Remaining</th>
             </tr>
           </thead>
           <tbody>
-            {!selectedEmpId ? (
+            {isPrivileged && !selectedEmpId ? (
               <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">Select an employee to view leave balances</td></tr>
             ) : isLoading ? (
               <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
-            ) : !balances || balances.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">No leave balances found for this employee</td></tr>
-            ) : balances.map((b: any, i: number) => (
-              <tr key={b.id} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
-                <td className="px-5 py-3 font-medium text-foreground">{b.leaveTypeName}</td>
-                <td className="px-5 py-3 text-muted-foreground">{b.year}</td>
-                <td className="px-5 py-3 text-center">{b.balance + b.used}</td>
-                <td className="px-5 py-3 text-center text-muted-foreground">{b.used}</td>
-                <td className="px-5 py-3 text-center font-semibold text-foreground">{b.balance}</td>
-              </tr>
-            ))}
+            ) : balanceRows.length === 0 ? (
+              <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">No leave balances found</td></tr>
+            ) : (
+              <>
+                {balanceRows.map((b: any, i: number) => {
+                  const allocated = b.used + b.balance;
+                  const pct = allocated > 0 ? Math.round((b.balance / allocated) * 100) : 0;
+                  return (
+                    <tr key={b.id} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
+                      <td className="px-5 py-3 font-medium text-foreground">{b.leaveTypeName}</td>
+                      <td className="px-5 py-3 text-muted-foreground">{b.year}</td>
+                      <td className="px-5 py-3 text-center">{allocated}</td>
+                      <td className="px-5 py-3 text-center text-muted-foreground">{b.used}</td>
+                      <td className="px-5 py-3 text-center">
+                        <span className={`font-semibold ${b.balance <= 0 ? "text-red-600" : b.balance <= 2 ? "text-amber-600" : "text-green-700"}`}>
+                          {b.balance}
+                        </span>
+                        {!isPrivileged && (
+                          <div className="mt-1 w-full max-w-[80px] mx-auto h-1.5 rounded-full bg-secondary overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${b.balance <= 0 ? "bg-red-500" : b.balance <= 2 ? "bg-amber-500" : "bg-green-500"}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {/* Totals row */}
+                <tr className="border-t-2 border-border bg-secondary font-semibold text-foreground">
+                  <td className="px-5 py-3" colSpan={2}>Total</td>
+                  <td className="px-5 py-3 text-center">{totalAllocated}</td>
+                  <td className="px-5 py-3 text-center text-muted-foreground">{totalUsed}</td>
+                  <td className="px-5 py-3 text-center text-green-700">{totalRemaining}</td>
+                </tr>
+              </>
+            )}
           </tbody>
         </table>
       </div>

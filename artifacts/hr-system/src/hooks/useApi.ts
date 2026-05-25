@@ -373,7 +373,8 @@ export function useLeaveBalances(employeeId?: string) {
   return useQuery({
     queryKey: ["leave-balances", employeeId],
     queryFn: () => fetchApi<LeaveBalance[]>(`/leave/balances${employeeId ? "?employeeId=" + employeeId : ""}`),
-    enabled: !!employeeId,
+    // No `enabled` guard — backend scopes by role automatically.
+    // Employees always get their own; admins/managers honour the employeeId param.
   });
 }
 
