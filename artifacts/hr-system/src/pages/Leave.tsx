@@ -26,18 +26,13 @@ function isSickLeave(types: any[], leaveTypeId: string): boolean {
 // ─── Apply Leave Dialog ────────────────────────────────────────────────────────
 function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data: currentUser } = useCurrentUser();
-  const isEmployee = currentUser?.role === "employee";
+  // Privileged roles can apply leave on behalf of any employee
+  const isPrivileged = ["super_admin", "hr_admin", "it_admin", "manager"].includes(currentUser?.role ?? "");
 
   const [form, setForm] = useState({ employeeId: "", leaveTypeId: "", startDate: "", endDate: "", reason: "", leaveDuration: "full_day", medicalDocumentUrl: "" });
   const { data: employees } = useEmployees();
   const { data: types } = useLeaveTypes();
   const qc = useQueryClient();
-
-  // For employees, resolve their own employeeId from the employees list once loaded
-  const selfEmployee = isEmployee
-    ? (employees as any[] ?? []).find((e: any) => e.id === currentUser?.employeeId)
-    : null;
-  const effectiveEmployeeId = isEmployee ? (currentUser?.employeeId ?? "") : form.employeeId;
 
   const mutation = useMutation({
     mutationFn: (d: any) => fetchApi("/leave/requests", { method: "POST", body: JSON.stringify(d) }),
@@ -60,14 +55,8 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
       >
         <DialogHeader><DialogTitle>Apply for Leave</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
-          {/* Employees apply for themselves — no dropdown needed */}
-          {isEmployee ? (
-            selfEmployee && (
-              <div className="rounded-md bg-secondary px-3 py-2 text-sm text-muted-foreground">
-                Applying as <span className="font-medium text-foreground">{selfEmployee.firstName} {selfEmployee.lastName}</span>
-              </div>
-            )
-          ) : (
+          {/* Privileged roles select an employee; regular employees apply for themselves */}
+          {isPrivileged ? (
             <div>
               <Label>Employee *</Label>
               <Select value={form.employeeId} onValueChange={v => set("employeeId", v)}>
@@ -77,6 +66,12 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
                 </SelectContent>
               </Select>
             </div>
+          ) : (
+            currentUser?.firstName && (
+              <div className="rounded-md bg-secondary px-3 py-2 text-sm text-muted-foreground">
+                Applying as <span className="font-medium text-foreground">{currentUser.firstName} {currentUser.lastName}</span>
+              </div>
+            )
           )}
           <div>
             <Label>Leave Type *</Label>
@@ -139,7 +134,7 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => {
-              if (!effectiveEmployeeId) { toast.error("Please select an employee"); return; }
+              if (isPrivileged && !form.employeeId) { toast.error("Please select an employee"); return; }
               if (!form.leaveTypeId) { toast.error("Please select a leave type"); return; }
               if (!form.startDate) { toast.error("Start date is required"); return; }
               if (!isHalfDay && !form.endDate) { toast.error("End date is required"); return; }
@@ -147,7 +142,9 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
               if (isAdvanceSick && !form.medicalDocumentUrl.trim()) { toast.error("Medical document is required for advance sick leave"); return; }
               const endDate = isHalfDay ? form.startDate : form.endDate;
               mutation.mutate({
-                employeeId: effectiveEmployeeId,
+                // Privileged roles send the selected employeeId; employees omit it
+                // so the API resolves it automatically from the auth token
+                ...(isPrivileged ? { employeeId: form.employeeId } : {}),
                 leaveTypeId: form.leaveTypeId,
                 startDate: form.startDate,
                 endDate,
