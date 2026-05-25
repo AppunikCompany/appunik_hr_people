@@ -1,7 +1,7 @@
 import { type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import { employeesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 
 export const PRIVILEGED_ROLES = new Set(["super_admin", "hr_admin", "it_admin", "manager"]);
 
@@ -34,14 +34,23 @@ export async function resolveEmployeeId(
     return null;
   }
 
-  const [emp] = await db
-    .select()
-    .from(employeesTable)
-    .where(eq(employeesTable.userId, userId));
+  // Look up by userId. Also fall back to email match in case the userId
+  // wasn't re-linked yet (e.g. middleware ran before the DB update committed).
+  const email = req.user?.email;
+  const conditions = email
+    ? or(eq(employeesTable.userId, userId), eq(employeesTable.email, email))
+    : eq(employeesTable.userId, userId);
+
+  const [emp] = await db.select().from(employeesTable).where(conditions);
 
   if (!emp) {
     res.status(403).json({ error: "No employee record linked to your account" });
     return null;
+  }
+
+  // If found by email but userId not yet set, link it now
+  if (emp.userId !== userId) {
+    await db.update(employeesTable).set({ userId }).where(eq(employeesTable.id, emp.id));
   }
 
   if (clientEmployeeId && clientEmployeeId !== emp.id) {

@@ -20,7 +20,9 @@ export async function resolveClerkUser(clerkUserId: string): Promise<AuthUser | 
     const [existing] = await db.select().from(employeesTable).where(conditions);
 
     if (existing) {
-      if (!existing.userId) {
+      // Always sync userId if it's missing or points to a different Clerk account.
+      // This handles: first login, Clerk account recreation, dev/prod userId mismatch.
+      if (existing.userId !== clerkUserId) {
         await db
           .update(employeesTable)
           .set({ userId: clerkUserId, profileImageUrl: clerkUser.imageUrl ?? existing.profileImageUrl })
