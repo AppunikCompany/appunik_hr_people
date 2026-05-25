@@ -156,7 +156,15 @@ function App() {
         </SignedIn>
         <SignedOut>
           <div className="flex items-center justify-center min-h-screen bg-background">
-            <SignIn routing="hash" />
+            <SignIn
+              routing="hash"
+              appearance={{
+                elements: {
+                  // Hide "Don't have an account? Sign up" — access is invite-only
+                  footerAction__signUp: { display: "none" },
+                },
+              }}
+            />
           </div>
         </SignedOut>
         <Toaster richColors position="top-right" />
