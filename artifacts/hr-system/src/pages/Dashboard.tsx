@@ -1,4 +1,5 @@
-import { useCurrentUser, useHeadcountReport, useAttendanceTeam, useLeaveRequests, useLeaveBalances, useHolidays } from "@/hooks/useApi";
+import { useCurrentUser, useHeadcountReport, useAttendanceTeam, useAttendanceToday, useLeaveRequests, useLeaveBalances, useHolidays } from "@/hooks/useApi";
+import { ClockWidget } from "@/components/ClockWidget";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Users, Clock, Calendar, UserX, ArrowRight, Briefcase, TrendingUp, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { Link } from "wouter";
@@ -59,18 +60,11 @@ function SectionCard({ title, action, children }: {
 function EmployeeDashboard({ user, greeting, today }: { user: any; greeting: string; today: string }) {
   const { data: myRequests } = useLeaveRequests();          // backend filters to own requests
   const { data: myBalances } = useLeaveBalances(user?.employeeId ?? undefined);
-  const { data: myAttendance } = useAttendanceTeam();      // backend filters to own record
+  const { data: todayRecord } = useAttendanceToday();       // employee's own clock record, refreshes every minute
   const { data: holidays } = useHolidays();
 
   const pendingCount = (myRequests as any[] ?? []).filter((r: any) => r.status === "pending" || r.status === "pending_doc").length;
   const approvedCount = (myRequests as any[] ?? []).filter((r: any) => r.status === "approved").length;
-
-  // Today's status from attendance
-  const myTodayRecord = (myAttendance as any[] ?? [])[0];
-  const todayStatus = myTodayRecord?.status ?? "absent";
-  const clockInTime = myTodayRecord?.clockIn
-    ? new Date(myTodayRecord.clockIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
-    : null;
 
   // Upcoming holidays (next 3)
   const todayStr = new Date().toISOString().split("T")[0];
@@ -90,15 +84,9 @@ function EmployeeDashboard({ user, greeting, today }: { user: any; greeting: str
         <p className="text-sm text-muted-foreground mt-1">Here's your personal overview for today.</p>
       </div>
 
-      {/* Personal stat cards */}
+      {/* Personal stat cards — ClockWidget replaces the static "Today's Status" card */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard
-          title="Today's Status"
-          value={todayStatus === "absent" ? "Absent" : todayStatus === "wfo" ? "In Office" : todayStatus === "wfh" ? "WFH" : todayStatus}
-          subtitle={clockInTime ? `Clocked in at ${clockInTime}` : "Not clocked in yet"}
-          icon={Clock}
-          trend={{ label: "Your attendance today", up: todayStatus !== "absent" }}
-        />
+        <ClockWidget record={todayRecord} compact />
         <StatCard
           title="Leave Balance"
           value={totalAvailable}

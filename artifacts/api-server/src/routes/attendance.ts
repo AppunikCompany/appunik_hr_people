@@ -7,8 +7,9 @@ import {
   employeesTable,
   departmentsTable,
   appConfigTable,
+  leaveRequestsTable,
 } from "@workspace/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, lte, gte } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { resolveEmployeeId, canReadEmployee, isPrivileged } from "../lib/ownership";
 import { fireAutomationEvent } from "../lib/automations";
@@ -195,6 +196,19 @@ router.get("/attendance/team", requireAuth, async (req, res) => {
     const records = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.date, today));
     const recordMap = new Map(records.map((r) => [r.employeeId, r]));
 
+    // Cross-reference approved leaves so on-leave employees show as "on_leave" not "absent"
+    const todayLeaves = await db
+      .select({ employeeId: leaveRequestsTable.employeeId })
+      .from(leaveRequestsTable)
+      .where(
+        and(
+          eq(leaveRequestsTable.status, "approved"),
+          lte(leaveRequestsTable.startDate, today),
+          gte(leaveRequestsTable.endDate, today)
+        )
+      );
+    const onLeaveIds = new Set(todayLeaves.map((l) => l.employeeId));
+
     const result = await Promise.all(
       employeeList.map(async (emp) => {
         const rec = recordMap.get(emp.id);
@@ -207,7 +221,7 @@ router.get("/attendance/team", requireAuth, async (req, res) => {
           employeeId: emp.id,
           employeeName: `${emp.firstName} ${emp.lastName}`,
           department: dept,
-          status: rec ? rec.type : "absent",
+          status: rec ? rec.type : onLeaveIds.has(emp.id) ? "on_leave" : "absent",
           clockIn: rec?.clockIn?.toISOString() ?? null,
           type: rec?.type ?? null,
         };

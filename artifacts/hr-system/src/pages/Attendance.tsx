@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useAttendanceTeam, useHolidays, useCurrentUser, fetchApi } from "@/hooks/useApi";
+import { useAttendanceTeam, useAttendanceToday, useHolidays, useCurrentUser, fetchApi } from "@/hooks/useApi";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
+import { ClockWidget } from "@/components/ClockWidget";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -131,6 +132,7 @@ export default function Attendance() {
   const { data: team, isLoading } = useAttendanceTeam();
   const { data: holidays, isLoading: holidaysLoading } = useHolidays();
   const { data: user } = useCurrentUser();
+  const { data: todayRecord } = useAttendanceToday();
 
   const { data: monthlyReport, isLoading: monthlyLoading } = useQuery({
     queryKey: ["att-report", month, year],
@@ -171,6 +173,15 @@ export default function Attendance() {
       />
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
+
+        {/* ── Tab navigation bar ── */}
+        <TabsList className="mb-4">
+          {user?.role !== "employee" && (
+            <TabsTrigger value="daily">Daily View</TabsTrigger>
+          )}
+          <TabsTrigger value="my">My Attendance</TabsTrigger>
+          <TabsTrigger value="holidays">Holidays</TabsTrigger>
+        </TabsList>
 
         {/* ── DAILY VIEW with Monthly View toggle ── */}
         <TabsContent value="daily">
@@ -297,6 +308,11 @@ export default function Attendance() {
 
         {/* ── MY ATTENDANCE ── */}
         <TabsContent value="my">
+          {/* Clock-in / Clock-out widget */}
+          <div className="mb-5 max-w-sm">
+            <ClockWidget record={todayRecord} />
+          </div>
+
           <div className="flex items-center gap-3 mb-4 flex-wrap">
             <Select value={month} onValueChange={setMonth}>
               <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
