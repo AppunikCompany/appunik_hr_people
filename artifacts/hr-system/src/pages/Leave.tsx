@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useLeaveRequests, useLeaveTypes, useEmployees, useLeaveBalances, fetchApi } from "@/hooks/useApi";
+import { useLeaveRequests, useLeaveTypes, useEmployees, useLeaveBalances, useCurrentUser, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -25,10 +25,20 @@ function isSickLeave(types: any[], leaveTypeId: string): boolean {
 
 // ─── Apply Leave Dialog ────────────────────────────────────────────────────────
 function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { data: currentUser } = useCurrentUser();
+  const isEmployee = currentUser?.role === "employee";
+
   const [form, setForm] = useState({ employeeId: "", leaveTypeId: "", startDate: "", endDate: "", reason: "", leaveDuration: "full_day", medicalDocumentUrl: "" });
   const { data: employees } = useEmployees();
   const { data: types } = useLeaveTypes();
   const qc = useQueryClient();
+
+  // For employees, resolve their own employeeId from the employees list once loaded
+  const selfEmployee = isEmployee
+    ? (employees as any[] ?? []).find((e: any) => e.id === currentUser?.employeeId)
+    : null;
+  const effectiveEmployeeId = isEmployee ? (currentUser?.employeeId ?? "") : form.employeeId;
+
   const mutation = useMutation({
     mutationFn: (d: any) => fetchApi("/leave/requests", { method: "POST", body: JSON.stringify(d) }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["leave-requests"] }); onClose(); toast.success("Leave request submitted"); },
@@ -50,15 +60,24 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
       >
         <DialogHeader><DialogTitle>Apply for Leave</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
-          <div>
-            <Label>Employee *</Label>
-            <Select value={form.employeeId} onValueChange={v => set("employeeId", v)}>
-              <SelectTrigger className="mt-1"><SelectValue placeholder="Select employee..." /></SelectTrigger>
-              <SelectContent>
-                {employees?.map((e: any) => <SelectItem key={e.id} value={e.id}>{e.firstName} {e.lastName}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Employees apply for themselves — no dropdown needed */}
+          {isEmployee ? (
+            selfEmployee && (
+              <div className="rounded-md bg-secondary px-3 py-2 text-sm text-muted-foreground">
+                Applying as <span className="font-medium text-foreground">{selfEmployee.firstName} {selfEmployee.lastName}</span>
+              </div>
+            )
+          ) : (
+            <div>
+              <Label>Employee *</Label>
+              <Select value={form.employeeId} onValueChange={v => set("employeeId", v)}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Select employee..." /></SelectTrigger>
+                <SelectContent>
+                  {employees?.map((e: any) => <SelectItem key={e.id} value={e.id}>{e.firstName} {e.lastName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div>
             <Label>Leave Type *</Label>
             <Select value={form.leaveTypeId} onValueChange={v => set("leaveTypeId", v)}>
@@ -120,7 +139,7 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => {
-              if (!form.employeeId) { toast.error("Please select an employee"); return; }
+              if (!effectiveEmployeeId) { toast.error("Please select an employee"); return; }
               if (!form.leaveTypeId) { toast.error("Please select a leave type"); return; }
               if (!form.startDate) { toast.error("Start date is required"); return; }
               if (!isHalfDay && !form.endDate) { toast.error("End date is required"); return; }
@@ -128,7 +147,7 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
               if (isAdvanceSick && !form.medicalDocumentUrl.trim()) { toast.error("Medical document is required for advance sick leave"); return; }
               const endDate = isHalfDay ? form.startDate : form.endDate;
               mutation.mutate({
-                employeeId: form.employeeId,
+                employeeId: effectiveEmployeeId,
                 leaveTypeId: form.leaveTypeId,
                 startDate: form.startDate,
                 endDate,
