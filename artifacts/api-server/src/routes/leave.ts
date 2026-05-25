@@ -151,6 +151,120 @@ router.get("/leave/balances", requireAuth, async (req, res) => {
   }
 });
 
+// ── Bulk-allocate leave balances for all active employees ─────────────────────
+// Creates balance rows (year's entitlement from maxDaysPerYear) for every
+// active employee × active leave type combination that doesn't already exist.
+// Safe to run multiple times — skips existing records.
+router.post("/leave/balances/allocate-bulk", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const year = parseInt((req.body as any).year) || new Date().getFullYear();
+
+    const [employees, leaveTypes, existingBalances] = await Promise.all([
+      db.select({ id: employeesTable.id, firstName: employeesTable.firstName, lastName: employeesTable.lastName })
+        .from(employeesTable).where(eq(employeesTable.status, "active")),
+      db.select().from(leaveTypesTable).where(eq(leaveTypesTable.isActive, true)),
+      db.select({ employeeId: leaveBalancesTable.employeeId, leaveTypeId: leaveBalancesTable.leaveTypeId })
+        .from(leaveBalancesTable).where(eq(leaveBalancesTable.year, year)),
+    ]);
+
+    // Build a set of already-existing (employeeId, leaveTypeId) pairs
+    const existingSet = new Set(existingBalances.map((b) => `${b.employeeId}::${b.leaveTypeId}`));
+
+    const toInsert: Array<{ id: string; employeeId: string; leaveTypeId: string; balance: number; used: number; year: number }> = [];
+    for (const emp of employees) {
+      for (const lt of leaveTypes) {
+        if (!existingSet.has(`${emp.id}::${lt.id}`)) {
+          toInsert.push({
+            id: crypto.randomUUID(),
+            employeeId: emp.id,
+            leaveTypeId: lt.id,
+            balance: lt.maxDaysPerYear,
+            used: 0,
+            year,
+          });
+        }
+      }
+    }
+
+    if (toInsert.length > 0) {
+      // Insert in batches of 50
+      for (let i = 0; i < toInsert.length; i += 50) {
+        await db.insert(leaveBalancesTable).values(toInsert.slice(i, i + 50));
+      }
+    }
+
+    res.json({
+      allocated: toInsert.length,
+      skipped: existingBalances.length,
+      employees: employees.length,
+      leaveTypes: leaveTypes.length,
+      year,
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Create / upsert a single employee's balance for a leave type ──────────────
+router.post("/leave/balances", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const { employeeId, leaveTypeId, balance, used = 0, year } = req.body as {
+      employeeId: string; leaveTypeId: string; balance: number; used?: number; year?: number;
+    };
+    if (!employeeId || !leaveTypeId || balance === undefined) {
+      res.status(400).json({ error: "employeeId, leaveTypeId, and balance are required" }); return;
+    }
+    const resolvedYear = year ?? new Date().getFullYear();
+
+    const [existing] = await db.select().from(leaveBalancesTable)
+      .where(and(
+        eq(leaveBalancesTable.employeeId, employeeId),
+        eq(leaveBalancesTable.leaveTypeId, leaveTypeId),
+        eq(leaveBalancesTable.year, resolvedYear),
+      ));
+
+    if (existing) {
+      // Update existing record
+      await db.update(leaveBalancesTable)
+        .set({ balance: Number(balance), used: Number(used) })
+        .where(eq(leaveBalancesTable.id, existing.id));
+      const [updated] = await db.select().from(leaveBalancesTable).where(eq(leaveBalancesTable.id, existing.id));
+      res.json(updated);
+    } else {
+      const newId = crypto.randomUUID();
+      await db.insert(leaveBalancesTable).values({
+        id: newId, employeeId, leaveTypeId,
+        balance: Number(balance), used: Number(used), year: resolvedYear,
+      });
+      const [created] = await db.select().from(leaveBalancesTable).where(eq(leaveBalancesTable.id, newId));
+      res.status(201).json(created);
+    }
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Adjust an individual balance record (HR migration / manual tweak) ─────────
+router.patch("/leave/balances/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const { id } = req.params as { id: string };
+    const { balance, used } = req.body as { balance?: number; used?: number };
+    const updateData: Record<string, any> = {};
+    if (balance !== undefined) updateData.balance = Number(balance);
+    if (used !== undefined) updateData.used = Number(used);
+    if (Object.keys(updateData).length === 0) {
+      res.status(400).json({ error: "Provide balance and/or used to update" }); return;
+    }
+    const [existing] = await db.select().from(leaveBalancesTable).where(eq(leaveBalancesTable.id, id));
+    if (!existing) { res.status(404).json({ error: "Balance record not found" }); return; }
+    await db.update(leaveBalancesTable).set(updateData).where(eq(leaveBalancesTable.id, id));
+    const [updated] = await db.select().from(leaveBalancesTable).where(eq(leaveBalancesTable.id, id));
+    res.json(updated);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 router.get("/leave/requests", requireAuth, async (req, res) => {
   try {
     const { employeeId, status, managerId } = req.query as Record<string, string>;

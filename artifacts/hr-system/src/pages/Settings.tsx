@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { Plus, Trash2, Edit, Lock, Shield } from "lucide-react";
+import { Plus, Trash2, Edit, Lock, Shield, Users, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
 // ─── Departments ──────────────────────────────────────────────────────────────
@@ -320,6 +320,72 @@ function RoleDialog({ role, open, onClose }: { role?: Role; open: boolean; onClo
   );
 }
 
+// ─── Allocate Leaves Panel ────────────────────────────────────────────────────
+function AllocateLeavesPanel() {
+  const currentYear = new Date().getFullYear();
+  const [result, setResult] = useState<{ allocated: number; skipped: number; employees: number; leaveTypes: number } | null>(null);
+  const qc = useQueryClient();
+
+  const allocate = useMutation({
+    mutationFn: () => fetchApi("/leave/balances/allocate-bulk", {
+      method: "POST",
+      body: JSON.stringify({ year: currentYear }),
+    }),
+    onSuccess: (data: any) => {
+      setResult(data);
+      qc.invalidateQueries({ queryKey: ["leave-balances"] });
+      if (data.allocated === 0) {
+        toast.info("All employees already have leave balances for " + currentYear);
+      } else {
+        toast.success(`Leave allocated to ${data.allocated} employee-type combinations`);
+      }
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <div className="bg-white border border-border rounded-lg shadow-sm p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Allocate Leave for {currentYear}</h3>
+          <p className="text-xs text-muted-foreground mt-1 max-w-lg">
+            Assigns this year's leave entitlement (from each leave type's <strong>Max Days/Year</strong>) to all active employees.
+            Employees who already have a balance for {currentYear} are skipped — safe to run multiple times.
+            After allocation, use the <strong>Leave → Balances</strong> tab to adjust individual employees.
+          </p>
+        </div>
+        <Button
+          size="sm"
+          onClick={() => allocate.mutate()}
+          disabled={allocate.isPending}
+          className="flex-shrink-0"
+        >
+          {allocate.isPending ? (
+            <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" /> Allocating…</>
+          ) : (
+            <><Users className="w-4 h-4 mr-1.5" /> Allocate for {currentYear}</>
+          )}
+        </Button>
+      </div>
+
+      {result && (
+        <div className="mt-4 rounded-md bg-secondary border border-border px-4 py-3 flex items-start gap-3">
+          <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+          <div className="text-xs text-foreground space-y-0.5">
+            <p className="font-medium">Allocation complete for {currentYear}</p>
+            <p className="text-muted-foreground">
+              {result.allocated > 0
+                ? <><strong className="text-foreground">{result.allocated}</strong> balance records created across <strong className="text-foreground">{result.employees}</strong> employees and <strong className="text-foreground">{result.leaveTypes}</strong> leave types.</>
+                : <>All <strong className="text-foreground">{result.employees}</strong> employees already had balances — nothing to do.</>}
+              {result.skipped > 0 && <> {result.skipped} existing records were skipped.</>}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 
 export default function Settings() {
@@ -515,7 +581,10 @@ export default function Settings() {
 
         {/* Leave Policies */}
         <TabsContent value="leave-policies">
-          <div className="bg-white border border-border rounded-lg shadow-sm">
+          {/* Bulk Allocation Panel */}
+          <AllocateLeavesPanel />
+
+          <div className="bg-white border border-border rounded-lg shadow-sm mt-5">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <h3 className="text-sm font-semibold">Leave Types & Policies</h3>
               <Button size="sm" onClick={() => setLeavePolicyOpen(true)}><Plus className="w-4 h-4 mr-1" /> Add</Button>

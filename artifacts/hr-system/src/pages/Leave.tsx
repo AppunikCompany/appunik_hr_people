@@ -487,6 +487,70 @@ function LeaveCalendarTab() {
   );
 }
 
+// ─── Adjust Balance Dialog ────────────────────────────────────────────────────
+function AdjustBalanceDialog({ balance, onClose }: { balance: any; onClose: () => void }) {
+  const allocated = balance.used + balance.balance;
+  const [usedStr, setUsedStr] = useState(String(balance.used));
+  const qc = useQueryClient();
+
+  const used = parseFloat(usedStr) || 0;
+  const remaining = Math.max(0, allocated - used);
+
+  const mutation = useMutation({
+    mutationFn: () => fetchApi(`/leave/balances/${balance.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ balance: remaining, used }),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leave-balances"] });
+      toast.success("Balance updated");
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={!!balance} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Adjust Leave Balance</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="rounded-md bg-secondary px-3 py-2 text-sm">
+            <p className="font-medium text-foreground">{balance.leaveTypeName}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Total allocated: <strong>{allocated} days</strong> for {balance.year}</p>
+          </div>
+          <div>
+            <Label>Days Already Used</Label>
+            <Input
+              type="number"
+              min="0"
+              max={allocated}
+              step="0.5"
+              value={usedStr}
+              onChange={e => setUsedStr(e.target.value)}
+              className="mt-1"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Enter how many days were consumed (including from the previous system).
+            </p>
+          </div>
+          <div className="rounded-md bg-secondary px-3 py-2 text-sm flex justify-between">
+            <span className="text-muted-foreground">Remaining after adjustment</span>
+            <span className={`font-semibold ${remaining <= 0 ? "text-red-600" : remaining <= 2 ? "text-amber-600" : "text-green-700"}`}>
+              {remaining} days
+            </span>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Balances Tab ──────────────────────────────────────────────────────────────
 function LeaveBalancesTab() {
   const { data: currentUser } = useCurrentUser();
@@ -494,6 +558,7 @@ function LeaveBalancesTab() {
 
   const { data: employees } = useEmployees();
   const [selectedEmpId, setSelectedEmpId] = useState<string>("");
+  const [adjustBalance, setAdjustBalance] = useState<any>(null);
 
   // For employees: always load own balance automatically via their employeeId.
   // For privileged roles: load based on dropdown selection.
@@ -538,15 +603,20 @@ function LeaveBalancesTab() {
               <th className="text-center px-5 py-3">Allocated</th>
               <th className="text-center px-5 py-3">Used</th>
               <th className="text-center px-5 py-3">Remaining</th>
+              {isPrivileged && <th className="text-right px-5 py-3">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {isPrivileged && !selectedEmpId ? (
-              <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">Select an employee to view leave balances</td></tr>
+              <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">Select an employee to view and adjust their leave balances</td></tr>
             ) : isLoading ? (
-              <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
+              <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
             ) : balanceRows.length === 0 ? (
-              <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">No leave balances found</td></tr>
+              <tr>
+                <td colSpan={6} className="text-center py-10 text-muted-foreground">
+                  No leave balances found.{isPrivileged && " Go to Settings → Leave Policies and click \"Allocate for " + new Date().getFullYear() + "\" first."}
+                </td>
+              </tr>
             ) : (
               <>
                 {balanceRows.map((b: any, i: number) => {
@@ -562,15 +632,20 @@ function LeaveBalancesTab() {
                         <span className={`font-semibold ${b.balance <= 0 ? "text-red-600" : b.balance <= 2 ? "text-amber-600" : "text-green-700"}`}>
                           {b.balance}
                         </span>
-                        {!isPrivileged && (
-                          <div className="mt-1 w-full max-w-[80px] mx-auto h-1.5 rounded-full bg-secondary overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${b.balance <= 0 ? "bg-red-500" : b.balance <= 2 ? "bg-amber-500" : "bg-green-500"}`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
-                        )}
+                        <div className="mt-1 w-full max-w-[80px] mx-auto h-1.5 rounded-full bg-secondary overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${b.balance <= 0 ? "bg-red-500" : b.balance <= 2 ? "bg-amber-500" : "bg-green-500"}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
                       </td>
+                      {isPrivileged && (
+                        <td className="px-5 py-3 text-right">
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setAdjustBalance(b)}>
+                            Adjust
+                          </Button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -580,12 +655,17 @@ function LeaveBalancesTab() {
                   <td className="px-5 py-3 text-center">{totalAllocated}</td>
                   <td className="px-5 py-3 text-center text-muted-foreground">{totalUsed}</td>
                   <td className="px-5 py-3 text-center text-green-700">{totalRemaining}</td>
+                  {isPrivileged && <td />}
                 </tr>
               </>
             )}
           </tbody>
         </table>
       </div>
+
+      {adjustBalance && (
+        <AdjustBalanceDialog balance={adjustBalance} onClose={() => setAdjustBalance(null)} />
+      )}
     </div>
   );
 }
