@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
   attendanceRecordsTable,
+  attendanceBreaksTable,
   overtimeLogsTable,
   holidaysTable,
   employeesTable,
@@ -9,7 +10,7 @@ import {
   appConfigTable,
   leaveRequestsTable,
 } from "@workspace/db";
-import { eq, and, inArray, lte, gte } from "drizzle-orm";
+import { eq, and, inArray, lte, gte, isNull, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { resolveEmployeeId, canReadEmployee, isPrivileged } from "../lib/ownership";
 import { fireAutomationEvent } from "../lib/automations";
@@ -140,7 +141,108 @@ router.get("/attendance/today", requireAuth, async (req, res): Promise<void> => 
       .select()
       .from(attendanceRecordsTable)
       .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.date, today)));
-    res.json(record ?? null);
+
+    if (!record) { res.json(null); return; }
+
+    // Attach break state
+    const breaks = await db
+      .select()
+      .from(attendanceBreaksTable)
+      .where(and(eq(attendanceBreaksTable.attendanceRecordId, record.id)));
+
+    const openBreak = breaks.find((b) => !b.breakEnd) ?? null;
+    const totalBreakMinutes = breaks
+      .filter((b) => b.durationMinutes != null)
+      .reduce((sum, b) => sum + (b.durationMinutes ?? 0), 0);
+
+    res.json({
+      ...record,
+      isOnBreak: !!openBreak,
+      currentBreakStart: openBreak?.breakStart?.toISOString() ?? null,
+      totalBreakMinutes,
+      breakCount: breaks.length,
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Break / Away tracking ─────────────────────────────────────────────────────
+
+router.post("/attendance/break-start", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const { employeeId: clientId } = req.body as { employeeId?: string };
+    const employeeId = await resolveEmployeeId(req, res, clientId);
+    if (!employeeId) return;
+
+    const today = new Date().toISOString().split("T")[0];
+
+    // Must be clocked in today
+    const [record] = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.date, today)));
+
+    if (!record) { res.status(400).json({ error: "You must be clocked in before marking a break" }); return; }
+    if (record.clockOut) { res.status(400).json({ error: "Cannot start a break after clocking out" }); return; }
+
+    // Check no open break already
+    const [openBreak] = await db
+      .select()
+      .from(attendanceBreaksTable)
+      .where(and(eq(attendanceBreaksTable.attendanceRecordId, record.id), isNull(attendanceBreaksTable.breakEnd)));
+
+    if (openBreak) { res.status(400).json({ error: "You already have an open break" }); return; }
+
+    const breakId = crypto.randomUUID();
+    await db.insert(attendanceBreaksTable).values({
+      id: breakId,
+      attendanceRecordId: record.id,
+      employeeId,
+      date: today,
+      breakStart: new Date(),
+    });
+
+    const [created] = await db.select().from(attendanceBreaksTable).where(eq(attendanceBreaksTable.id, breakId));
+    res.status(201).json(created);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.post("/attendance/break-end", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const { employeeId: clientId } = req.body as { employeeId?: string };
+    const employeeId = await resolveEmployeeId(req, res, clientId);
+    if (!employeeId) return;
+
+    const today = new Date().toISOString().split("T")[0];
+
+    const [record] = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.date, today)));
+
+    if (!record) { res.status(400).json({ error: "No attendance record for today" }); return; }
+
+    // Find the open break
+    const [openBreak] = await db
+      .select()
+      .from(attendanceBreaksTable)
+      .where(and(eq(attendanceBreaksTable.attendanceRecordId, record.id), isNull(attendanceBreaksTable.breakEnd)))
+      .orderBy(desc(attendanceBreaksTable.breakStart));
+
+    if (!openBreak) { res.status(400).json({ error: "No active break to end" }); return; }
+
+    const breakEnd = new Date();
+    const durationMinutes = (breakEnd.getTime() - new Date(openBreak.breakStart).getTime()) / 60000;
+
+    await db.update(attendanceBreaksTable)
+      .set({ breakEnd, durationMinutes })
+      .where(eq(attendanceBreaksTable.id, openBreak.id));
+
+    const [updated] = await db.select().from(attendanceBreaksTable).where(eq(attendanceBreaksTable.id, openBreak.id));
+    res.json(updated);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

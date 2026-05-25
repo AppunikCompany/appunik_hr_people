@@ -181,6 +181,11 @@ export interface AttendanceRecord {
   isLate?: boolean;
   isHalfDay?: boolean;
   notes?: string | null;
+  // Break state — only present on /attendance/today response
+  isOnBreak?: boolean;
+  currentBreakStart?: string | null;
+  totalBreakMinutes?: number;
+  breakCount?: number;
 }
 
 export interface Holiday {
