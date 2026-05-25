@@ -162,15 +162,35 @@ router.get("/attendance/monthly", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/attendance/team", requireAuth, async (_req, res) => {
+router.get("/attendance/team", requireAuth, async (req, res) => {
   try {
     const today = new Date().toISOString().split("T")[0];
-    const employees = await db.select().from(employeesTable).where(eq(employeesTable.status, "active"));
+    const role = req.user?.role ?? "employee";
+
+    let employeeList;
+    if (role === "employee") {
+      // Employees see only their own record
+      const [self] = await db.select().from(employeesTable)
+        .where(eq(employeesTable.userId, req.user!.id));
+      employeeList = self ? [self] : [];
+    } else if (role === "manager") {
+      // Managers see their direct reports
+      const [mgr] = await db.select({ id: employeesTable.id }).from(employeesTable)
+        .where(eq(employeesTable.userId, req.user!.id));
+      employeeList = mgr
+        ? await db.select().from(employeesTable)
+            .where(and(eq(employeesTable.status, "active"), eq(employeesTable.reportingManagerId, mgr.id)))
+        : [];
+    } else {
+      // hr_admin / super_admin / it_admin — all active employees
+      employeeList = await db.select().from(employeesTable).where(eq(employeesTable.status, "active"));
+    }
+
     const records = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.date, today));
     const recordMap = new Map(records.map((r) => [r.employeeId, r]));
 
     const result = await Promise.all(
-      employees.map(async (emp) => {
+      employeeList.map(async (emp) => {
         const rec = recordMap.get(emp.id);
         let dept = null;
         if (emp.departmentId) {

@@ -62,11 +62,12 @@ const ALL_NAV_ITEMS: NavItem[] = [
     href: "/attendance",
     icon: Clock,
     module: "attendance",
+    // children are role-filtered in the layout render
     children: [
-      { label: "Daily View", href: "/attendance" },
+      { label: "Daily View", href: "/attendance", roles: ["super_admin", "hr_admin", "manager", "it_admin"] },
       { label: "My Attendance", href: "/attendance/my" },
       { label: "Holidays", href: "/attendance/holidays" },
-    ],
+    ] as any,
   },
   {
     label: "Leave",
@@ -154,7 +155,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   },
 ];
 
-function NavItemRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
+function NavItemRow({ item, collapsed, userRole }: { item: NavItem; collapsed: boolean; userRole?: string }) {
   const [isActive] = useRoute(item.href + "/:rest*");
   const [isExact] = useRoute(item.href);
   const active = isActive || isExact;
@@ -165,6 +166,10 @@ function NavItemRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) 
   }, [active]);
 
   if (item.children) {
+    // Filter children by role when a child has a `roles` whitelist
+    const visibleChildren = item.children.filter((child: any) =>
+      !child.roles || child.roles.includes(userRole ?? "employee")
+    );
     return (
       <div>
         <button
@@ -187,7 +192,7 @@ function NavItemRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) 
         </button>
         {!collapsed && open && (
           <div className="ml-3 mt-0.5 pl-4 border-l border-border space-y-0.5 py-0.5">
-            {item.children.map((child) => (
+            {visibleChildren.map((child: any) => (
               <NavChildItem key={child.href} item={child} />
             ))}
           </div>
@@ -322,7 +327,7 @@ export function Layout({ children }: LayoutProps) {
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-2 py-3 space-y-0.5">
           {navItems.map((item) => (
-            <NavItemRow key={item.href} item={item} collapsed={collapsed} />
+            <NavItemRow key={item.href} item={item} collapsed={collapsed} userRole={user?.role} />
           ))}
         </nav>
 

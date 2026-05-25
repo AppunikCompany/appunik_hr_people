@@ -58,9 +58,14 @@ const SYSTEM_ROLES: Array<{
   },
   {
     name: "employee",
-    description: "Employee self-service only",
+    description: "Employee self-service — own leave, attendance, and profile only",
     isProtected: false,
-    permissions: Object.fromEntries(ROLE_MODULES.map((m) => [m, m === "dashboard" ? viewOnly : none])),
+    permissions: Object.fromEntries(
+      ROLE_MODULES.map((m) => [
+        m,
+        m === "dashboard" || m === "leave" || m === "attendance" ? viewOnly : none,
+      ])
+    ),
   },
 ];
 
@@ -92,17 +97,31 @@ export async function seedSystemRoles(): Promise<void> {
       .from(rolePermissionsTable)
       .where(eq(rolePermissionsTable.roleId, roleId));
 
-    if (existingPerms.length === 0) {
-      for (const [module, perm] of Object.entries(roleDef.permissions)) {
+    const existingMap = new Map(existingPerms.map((p) => [p.module, p]));
+
+    for (const [module, perm] of Object.entries(roleDef.permissions)) {
+      const existing = existingMap.get(module);
+      if (!existing) {
+        // Insert new module permission
         await db.insert(rolePermissionsTable).values({
           id: crypto.randomUUID(),
           roleId,
           module,
           ...perm,
         });
+      } else if (
+        existing.canView !== perm.canView ||
+        existing.canCreate !== perm.canCreate ||
+        existing.canEdit !== perm.canEdit ||
+        existing.canDelete !== perm.canDelete
+      ) {
+        // Update if the definition has changed (keeps system roles in sync with code)
+        await db.update(rolePermissionsTable)
+          .set(perm)
+          .where(eq(rolePermissionsTable.id, existing.id));
       }
-      console.log(`[seed] Seeded permissions for: ${roleDef.name}`);
     }
+    console.log(`[seed] Synced permissions for: ${roleDef.name}`);
   }
 }
 

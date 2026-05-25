@@ -12,7 +12,7 @@ import {
 import { eq, and, gte, lte } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
-import { resolveEmployeeId } from "../lib/ownership";
+import { resolveEmployeeId, isPrivileged } from "../lib/ownership";
 
 const router: IRouter = Router();
 
@@ -102,8 +102,25 @@ router.delete("/leave/types/:id", requireAuth, requireRole("super_admin", "hr_ad
 
 router.get("/leave/balances", requireAuth, async (req, res) => {
   try {
-    const { employeeId } = req.query as Record<string, string>;
+    const { employeeId: queryEmployeeId } = req.query as Record<string, string>;
     const year = new Date().getFullYear();
+    const role = req.user?.role ?? "employee";
+
+    // Resolve the effective employee ID filter based on role
+    let effectiveEmployeeId: string | null = null;
+    if (role === "employee") {
+      // Always force employees to see only their own balance
+      const [emp] = await db.select({ id: employeesTable.id })
+        .from(employeesTable).where(eq(employeesTable.userId, req.user!.id));
+      effectiveEmployeeId = emp?.id ?? null;
+      if (!effectiveEmployeeId) { res.json([]); return; }
+    } else if (role === "manager") {
+      // Managers may request a specific employee's balance (own team); fall back to all if not specified
+      effectiveEmployeeId = queryEmployeeId ?? null;
+    } else {
+      // hr_admin / super_admin / it_admin — honour the query param or return all
+      effectiveEmployeeId = queryEmployeeId ?? null;
+    }
 
     let balances = await db
       .select({
@@ -113,7 +130,7 @@ router.get("/leave/balances", requireAuth, async (req, res) => {
       .from(leaveBalancesTable)
       .leftJoin(leaveTypesTable, eq(leaveBalancesTable.leaveTypeId, leaveTypesTable.id));
 
-    if (employeeId) balances = balances.filter((b) => b.balance.employeeId === employeeId);
+    if (effectiveEmployeeId) balances = balances.filter((b) => b.balance.employeeId === effectiveEmployeeId);
 
     const result = balances
       .filter((b) => b.balance.year === year)
@@ -137,6 +154,7 @@ router.get("/leave/balances", requireAuth, async (req, res) => {
 router.get("/leave/requests", requireAuth, async (req, res) => {
   try {
     const { employeeId, status, managerId } = req.query as Record<string, string>;
+    const role = req.user?.role ?? "employee";
 
     const requests = await db
       .select({
@@ -149,10 +167,29 @@ router.get("/leave/requests", requireAuth, async (req, res) => {
       .leftJoin(leaveTypesTable, eq(leaveRequestsTable.leaveTypeId, leaveTypesTable.id));
 
     let filtered = requests;
-    if (employeeId) filtered = filtered.filter((r) => r.req.employeeId === employeeId);
-    if (status) filtered = filtered.filter((r) => r.req.status === status);
-    if (managerId) {
-      filtered = filtered.filter((r) => r.emp?.reportingManagerId === managerId);
+
+    if (role === "employee") {
+      // Employees can only see their own leave requests — ignore all query params
+      const [emp] = await db.select({ id: employeesTable.id })
+        .from(employeesTable).where(eq(employeesTable.userId, req.user!.id));
+      filtered = emp ? filtered.filter((r) => r.req.employeeId === emp.id) : [];
+    } else if (role === "manager") {
+      // Managers see their team's requests (direct reports)
+      const [mgr] = await db.select({ id: employeesTable.id })
+        .from(employeesTable).where(eq(employeesTable.userId, req.user!.id));
+      if (mgr) {
+        filtered = filtered.filter((r) => r.emp?.reportingManagerId === mgr.id);
+      } else {
+        filtered = [];
+      }
+      // Allow further filtering by employeeId or status within their team
+      if (employeeId) filtered = filtered.filter((r) => r.req.employeeId === employeeId);
+      if (status) filtered = filtered.filter((r) => r.req.status === status);
+    } else {
+      // hr_admin / super_admin / it_admin — see all, honour query filters
+      if (employeeId) filtered = filtered.filter((r) => r.req.employeeId === employeeId);
+      if (status) filtered = filtered.filter((r) => r.req.status === status);
+      if (managerId) filtered = filtered.filter((r) => r.emp?.reportingManagerId === managerId);
     }
 
     const result = filtered.map((r) => ({
