@@ -274,9 +274,20 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
 
     // ── Sick leave: apply duration-based document rules ──
     if (isSickLeaveType(lt)) {
+      const isAdvance = startDate > todayStr; // future-dated sick leave
       const deadlineDays = policy?.documentDeadlineDays ?? 3;
-      if (days >= 3) {
-        // 3+ days: document is mandatory — allow submission without doc (pending_doc),
+
+      if (isAdvance) {
+        // Advance sick leave: document must be provided upfront — no grace period
+        if (!medicalDocumentUrl?.trim()) {
+          res.status(400).json({
+            error: "Advance sick leave requires a supporting document (doctor's appointment letter, medical certificate, etc.)",
+          });
+          return;
+        }
+        // Doc provided — no pending_doc needed
+      } else if (days >= 3) {
+        // 3+ days (backdated or today): document is mandatory — allow submission without doc (pending_doc),
         // employee must upload within deadline or it converts to LOP
         sickNeedsDoc = !medicalDocumentUrl?.trim();
         if (sickNeedsDoc) {
@@ -284,8 +295,8 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
           documentDeadlineAt.setDate(documentDeadlineAt.getDate() + deadlineDays);
         }
       }
-      // ≤1 day: no doc needed (trust-based)
-      // 2 days: optional — frontend shows soft warning, no backend block
+      // ≤1 day (non-advance): no doc needed (trust-based)
+      // 2 days (non-advance): optional — frontend shows soft warning, no backend block
     }
 
     // ── LV-05: Auto-detect LOP when balance is exhausted ──
