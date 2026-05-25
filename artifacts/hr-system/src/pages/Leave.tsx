@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { formatDate } from "@/lib/utils";
-import { Plus, Check, X, Calendar, Info, Edit2, Download, Trash2, RotateCcw } from "lucide-react";
+import { Plus, Check, X, Calendar, Info, Edit2, Download, Trash2, RotateCcw, Upload, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 function isSickLeave(types: any[], leaveTypeId: string): boolean {
@@ -43,8 +43,22 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
 
   const isHalfDay = form.leaveDuration !== "full_day";
   const sick = isSickLeave(types as any[] ?? [], form.leaveTypeId);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const isAdvanceSick = sick && form.startDate && new Date(form.startDate) > today;
+  const todayStr = new Date().toISOString().split("T")[0];
+
+  // Estimate days for warning logic (rough count, exact count done server-side)
+  const estimateDays = () => {
+    if (isHalfDay) return 0.5;
+    if (!form.startDate || !form.endDate) return 0;
+    let count = 0; const cur = new Date(form.startDate);
+    const end = new Date(form.endDate);
+    while (cur <= end) { const d = cur.getDay(); if (d !== 0 && d !== 6) count++; cur.setDate(cur.getDate() + 1); }
+    return count;
+  };
+  const estDays = estimateDays();
+  const isBackdated = sick && form.startDate && form.startDate < todayStr;
+  const sickDoc3Plus = sick && estDays >= 3;       // mandatory (can upload later)
+  const sickDocOptional = sick && estDays === 2;   // optional, soft warning
+  const showDocField = sick && (estDays >= 2);     // show doc field for 2+ days
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -108,23 +122,43 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
             )}
           </div>
 
-          {sick && (
-            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+          {/* Backdated sick leave notice */}
+          {isBackdated && (
+            <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800 flex items-start gap-2">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-              <span>Sick leave <strong>cannot be applied in advance</strong> without a medical document. If the start date is a future date, a medical document link is required.</span>
+              <span>This is a <strong>backdated</strong> sick leave. Your manager will be notified for review.</span>
             </div>
           )}
 
-          {isAdvanceSick && (
+          {/* 2-day optional document warning */}
+          {sickDocOptional && !sickDoc3Plus && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 flex items-start gap-2">
+              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>For 2-day sick leave, a medical document is <strong>recommended</strong>. HR may request proof later.</span>
+            </div>
+          )}
+
+          {/* 3+ day mandatory document notice */}
+          {sickDoc3Plus && (
+            <div className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>
+                Sick leave of <strong>3 or more days</strong> requires a medical document.
+                You can submit now and upload the document later — but it <strong>must be uploaded within 3 days</strong> or the leave will be converted to Loss of Pay.
+              </span>
+            </div>
+          )}
+
+          {/* Document upload field for 2+ days sick leave */}
+          {showDocField && (
             <div>
-              <Label>Medical Document <span className="text-destructive">*</span></Label>
+              <Label>Medical Document {sickDoc3Plus ? <span className="text-orange-600 text-xs">(required within 3 days)</span> : <span className="text-muted-foreground text-xs">(optional)</span>}</Label>
               <Input
-                placeholder="Paste a link to your medical document (e.g. Google Drive, email scan)"
+                placeholder="Paste a Google Drive link, prescription scan URL, etc."
                 value={form.medicalDocumentUrl}
                 onChange={e => set("medicalDocumentUrl", e.target.value)}
                 className="mt-1"
               />
-              <p className="text-xs text-muted-foreground mt-1">Required for advance sick leave. Share a Google Drive link or any accessible document URL.</p>
             </div>
           )}
 
@@ -139,11 +173,8 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
               if (!form.startDate) { toast.error("Start date is required"); return; }
               if (!isHalfDay && !form.endDate) { toast.error("End date is required"); return; }
               if (!isHalfDay && new Date(form.endDate) < new Date(form.startDate)) { toast.error("End date must be after start date"); return; }
-              if (isAdvanceSick && !form.medicalDocumentUrl.trim()) { toast.error("Medical document is required for advance sick leave"); return; }
               const endDate = isHalfDay ? form.startDate : form.endDate;
               mutation.mutate({
-                // Privileged roles send the selected employeeId; employees omit it
-                // so the API resolves it automatically from the auth token
                 ...(isPrivileged ? { employeeId: form.employeeId } : {}),
                 leaveTypeId: form.leaveTypeId,
                 startDate: form.startDate,
@@ -157,6 +188,71 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
             disabled={mutation.isPending}
           >
             {mutation.isPending ? "Submitting..." : "Submit"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Upload Document Dialog ───────────────────────────────────────────────────
+function UploadDocDialog({ req, onClose }: { req: any; onClose: () => void }) {
+  const [url, setUrl] = useState("");
+  const qc = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      fetchApi(`/leave/requests/${req.id}/document`, {
+        method: "PATCH",
+        body: JSON.stringify({ medicalDocumentUrl: url.trim() }),
+      }),
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ["leave-requests"] });
+      onClose();
+      toast.success(data.statusChanged
+        ? "Document uploaded — leave is now pending manager approval"
+        : "Document updated successfully");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={!!req} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Upload Medical Document</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{req?.employeeName}</span> — {req?.leaveTypeName}
+            <br />
+            {req && <span className="text-xs">{formatDate(req.startDate)} – {formatDate(req.endDate)} ({req.days} {req.days === 1 ? "day" : "days"})</span>}
+          </div>
+          {req?.documentDeadlineAt && (
+            <div className="rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800 flex items-start gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>Document deadline: <strong>{formatDate(new Date(req.documentDeadlineAt).toISOString().split("T")[0])}</strong>. After this date the leave converts to Loss of Pay.</span>
+            </div>
+          )}
+          <div>
+            <Label>Document URL *</Label>
+            <Input
+              value={url}
+              onChange={e => setUrl(e.target.value)}
+              placeholder="Paste Google Drive, Dropbox, or any accessible link..."
+              className="mt-1"
+            />
+            <p className="text-xs text-muted-foreground mt-1">Share a link to a prescription, doctor's note, or medical certificate.</p>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => {
+              if (!url.trim()) { toast.error("Please enter a document URL"); return; }
+              mutation.mutate();
+            }}
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending ? "Uploading..." : "Upload Document"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -695,9 +791,10 @@ function LeaveReportsTab() {
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="pending_doc">Doc Pending</SelectItem>
               <SelectItem value="approved">Approved</SelectItem>
               <SelectItem value="rejected">Rejected</SelectItem>
-              <SelectItem value="lop">LOP</SelectItem>
+              <SelectItem value="lop">Loss of Pay</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -769,6 +866,7 @@ export default function Leave() {
   const [applyOpen, setApplyOpen] = useState(false);
   const [approveTarget, setApproveTarget] = useState<any>(null);
   const [rejectTarget, setRejectTarget] = useState<any>(null);
+  const [uploadDocTarget, setUploadDocTarget] = useState<any>(null);
   const { data: requests, isLoading } = useLeaveRequests(status ? { status } : undefined);
   const qc = useQueryClient();
 
@@ -826,9 +924,10 @@ export default function Leave() {
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="pending_doc">Doc Pending</SelectItem>
                   <SelectItem value="approved">Approved</SelectItem>
                   <SelectItem value="rejected">Rejected</SelectItem>
-                  <SelectItem value="lop">LOP</SelectItem>
+                  <SelectItem value="lop">Loss of Pay</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
                 </SelectContent>
               </Select>
@@ -858,6 +957,7 @@ export default function Leave() {
                       <td className="px-5 py-3 text-muted-foreground">
                         {req.leaveTypeName}
                         {req.isHalfDay && <span className="ml-1 text-xs text-blue-600">(Half Day)</span>}
+                        {req.isBackdated && <span className="ml-1 text-xs text-purple-600 bg-purple-50 px-1 py-0.5 rounded">(Backdated)</span>}
                       </td>
                       <td className="px-5 py-3 text-muted-foreground text-xs">
                         {formatDate(req.startDate)} – {formatDate(req.endDate)}
@@ -866,38 +966,31 @@ export default function Leave() {
                       <td className="px-5 py-3 text-muted-foreground max-w-xs truncate">{req.reason ?? "—"}</td>
                       <td className="px-5 py-3"><StatusBadge status={req.status} /></td>
                       <td className="px-5 py-3">
-                        {(req.status === "pending" || req.status === "lop") && (
-                          <div className="flex gap-1">
-                            <Button
-                              size="sm" variant="outline"
-                              title="Approve"
-                              className="text-green-600 hover:text-green-700 hover:bg-green-50 h-7 px-2"
-                              onClick={() => setApproveTarget(req)}
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              size="sm" variant="outline"
-                              title="Reject"
-                              className="text-red-500 hover:text-red-600 hover:bg-red-50 h-7 px-2"
-                              onClick={() => setRejectTarget(req)}
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </Button>
-                            <Button
-                              size="sm" variant="ghost"
-                              title="Cancel Request"
-                              className="text-muted-foreground hover:text-foreground h-7 px-2"
-                              onClick={() => {
-                                if (confirm("Cancel this leave request?")) {
-                                  cancelMutation.mutate(req.id);
-                                }
-                              }}
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        )}
+                        <div className="flex gap-1">
+                          {(req.status === "pending" || req.status === "lop") && (
+                            <>
+                              <Button size="sm" variant="outline" title="Approve" className="text-green-600 hover:text-green-700 hover:bg-green-50 h-7 px-2" onClick={() => setApproveTarget(req)}>
+                                <Check className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button size="sm" variant="outline" title="Reject" className="text-red-500 hover:text-red-600 hover:bg-red-50 h-7 px-2" onClick={() => setRejectTarget(req)}>
+                                <X className="w-3.5 h-3.5" />
+                              </Button>
+                              <Button size="sm" variant="ghost" title="Cancel Request" className="text-muted-foreground hover:text-foreground h-7 px-2" onClick={() => { if (confirm("Cancel this leave request?")) cancelMutation.mutate(req.id); }}>
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </Button>
+                            </>
+                          )}
+                          {req.status === "pending_doc" && (
+                            <>
+                              <Button size="sm" variant="outline" title="Upload Medical Document" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 h-7 px-2 gap-1 text-xs" onClick={() => setUploadDocTarget(req)}>
+                                <Upload className="w-3.5 h-3.5" /> Doc
+                              </Button>
+                              <Button size="sm" variant="ghost" title="Cancel Request" className="text-muted-foreground hover:text-foreground h-7 px-2" onClick={() => { if (confirm("Cancel this leave request?")) cancelMutation.mutate(req.id); }}>
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -931,6 +1024,7 @@ export default function Leave() {
       <ApplyLeaveDialog open={applyOpen} onClose={() => setApplyOpen(false)} />
       {approveTarget && <ApproveDialog req={approveTarget} onClose={() => setApproveTarget(null)} />}
       {rejectTarget && <RejectDialog req={rejectTarget} onClose={() => setRejectTarget(null)} />}
+      {uploadDocTarget && <UploadDocDialog req={uploadDocTarget} onClose={() => setUploadDocTarget(null)} />}
 
 
     </PageContainer>

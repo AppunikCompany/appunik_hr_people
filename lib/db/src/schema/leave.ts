@@ -39,9 +39,11 @@ export const leaveRequestsTable = mysqlTable("people_leave_requests", {
   days: double("days").notNull(),
   isHalfDay: boolean("is_half_day").notNull().default(false),
   halfDayPeriod: varchar("half_day_period", { length: 20 }), // "half_day_morning" | "half_day_afternoon"
+  isBackdated: boolean("is_backdated").notNull().default(false),
   medicalDocumentUrl: text("medical_document_url"),
+  documentDeadlineAt: timestamp("document_deadline_at"), // when pending_doc must be uploaded by
   reason: text("reason"),
-  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  status: varchar("status", { length: 30 }).notNull().default("pending"),
   managerComment: text("manager_comment"),
   approvedById: varchar("approved_by_id", { length: 36 }),
   approvedByRole: varchar("approved_by_role", { length: 30 }), // "manager" | "hr_admin" | "super_admin"
@@ -72,6 +74,7 @@ export const leavePoliciesTable = mysqlTable("people_leave_policies", {
   noLeaveInProbation: boolean("no_leave_in_probation").notNull().default(false),
   minNoticeDays: int("min_notice_days").notNull().default(0),
   maxConsecutiveDays: int("max_consecutive_days"),
+  documentDeadlineDays: int("document_deadline_days").notNull().default(3), // days after submission before pending_doc → lop
   notes: text("notes"),
   updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });

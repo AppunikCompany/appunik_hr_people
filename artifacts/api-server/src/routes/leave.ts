@@ -160,6 +160,7 @@ router.get("/leave/requests", requireAuth, async (req, res) => {
       employeeName: r.emp ? `${r.emp.firstName} ${r.emp.lastName}` : "",
       leaveTypeName: r.lt?.name ?? "",
       approvedByName: null,
+      isBackdated: r.req.isBackdated ?? false,
     }));
 
     res.json(result);
@@ -173,6 +174,33 @@ function isSickLeaveType(lt: { name: string; code: string } | undefined): boolea
   const name = lt.name.toLowerCase();
   const code = lt.code.toLowerCase();
   return name.includes("sick") || code === "sl" || code === "sick" || code === "sick_leave";
+}
+
+// ── Auto-convert overdue pending_doc leaves to LOP ──
+export async function processOverduePendingDocLeaves(): Promise<void> {
+  try {
+    const now = new Date();
+    const allPendingDoc = await db
+      .select({ id: leaveRequestsTable.id, documentDeadlineAt: leaveRequestsTable.documentDeadlineAt })
+      .from(leaveRequestsTable)
+      .where(eq(leaveRequestsTable.status, "pending_doc"));
+
+    const overdue = allPendingDoc.filter(
+      (r) => r.documentDeadlineAt && new Date(r.documentDeadlineAt) < now
+    );
+
+    for (const r of overdue) {
+      await db
+        .update(leaveRequestsTable)
+        .set({ status: "lop" })
+        .where(eq(leaveRequestsTable.id, r.id));
+    }
+    if (overdue.length > 0) {
+      console.log(`[leave] Auto-converted ${overdue.length} overdue pending_doc leave(s) to LOP`);
+    }
+  } catch (e) {
+    console.error("[leave] Failed to process overdue pending_doc leaves:", e);
+  }
 }
 
 router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
@@ -205,22 +233,11 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, employeeId));
     const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, leaveTypeId));
 
-    // ── Sick Leave Rules ──
-    if (isSickLeaveType(lt)) {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const start = new Date(startDate);
-      start.setHours(0, 0, 0, 0);
-      const isAdvance = start > today;
-
-      if (isAdvance && !medicalDocumentUrl?.trim()) {
-        res.status(400).json({
-          error: "Sick leave cannot be applied in advance without a medical document. Please attach a medical document (URL or reference) to proceed.",
-          code: "SICK_LEAVE_ADVANCE_DOC_REQUIRED",
-        });
-        return;
-      }
-    }
+    // ── Sick Leave Duration-Based Document Rules (from plan) ──
+    const todayStr = new Date().toISOString().split("T")[0];
+    const isBackdated = startDate < todayStr;
+    let sickNeedsDoc = false;       // 3+ days: mandatory (can upload later)
+    let documentDeadlineAt: Date | null = null;
 
     // ── LV-09: Enforce leave policy rules ──
     const [policy] = await db.select().from(leavePoliciesTable).where(eq(leavePoliciesTable.leaveTypeId, leaveTypeId));
@@ -255,18 +272,39 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
     const holidayDates = isHalfDay ? new Set<string>() : await fetchHolidayDates(startDate, endDate);
     const days = isHalfDay ? 0.5 : countBusinessDays(new Date(startDate), new Date(endDate), holidayDates);
 
+    // ── Sick leave: apply duration-based document rules ──
+    if (isSickLeaveType(lt)) {
+      const deadlineDays = policy?.documentDeadlineDays ?? 3;
+      if (days >= 3) {
+        // 3+ days: document is mandatory — allow submission without doc (pending_doc),
+        // employee must upload within deadline or it converts to LOP
+        sickNeedsDoc = !medicalDocumentUrl?.trim();
+        if (sickNeedsDoc) {
+          documentDeadlineAt = new Date();
+          documentDeadlineAt.setDate(documentDeadlineAt.getDate() + deadlineDays);
+        }
+      }
+      // ≤1 day: no doc needed (trust-based)
+      // 2 days: optional — frontend shows soft warning, no backend block
+    }
+
     // ── LV-05: Auto-detect LOP when balance is exhausted ──
     const year = new Date().getFullYear();
     const [bal] = await db.select().from(leaveBalancesTable)
       .where(and(eq(leaveBalancesTable.employeeId, employeeId), eq(leaveBalancesTable.leaveTypeId, leaveTypeId), eq(leaveBalancesTable.year, year)));
     const isLop = !!bal && (bal.balance - bal.used) < days;
-    const effectiveStatus = isLop ? "lop" : "pending";
+
+    // Determine final status
+    // pending_doc takes priority (employee must upload doc), then lop, then pending
+    const effectiveStatus = sickNeedsDoc ? "pending_doc" : isLop ? "lop" : "pending";
 
     const lrId = crypto.randomUUID();
     await db.insert(leaveRequestsTable).values({
       id: lrId, employeeId, leaveTypeId, startDate, endDate, days,
       isHalfDay, halfDayPeriod: halfDayPeriod ?? null,
+      isBackdated,
       medicalDocumentUrl: medicalDocumentUrl?.trim() || null,
+      documentDeadlineAt,
       reason, status: effectiveStatus,
     });
     const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, lrId));
@@ -283,6 +321,8 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
       leaveTypeName: lt?.name ?? "",
       approvedByName: null,
       isLop,
+      pendingDoc: sickNeedsDoc,
+      documentDeadlineAt: documentDeadlineAt?.toISOString() ?? null,
     });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -453,6 +493,38 @@ router.patch("/leave/requests/:id", requireAuth, async (req, res): Promise<void>
 
     const [updated] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
     res.json(updated);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Upload / update medical document on a pending_doc leave ──
+router.patch("/leave/requests/:id/document", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const { medicalDocumentUrl } = req.body as { medicalDocumentUrl: string };
+    if (!medicalDocumentUrl?.trim()) {
+      res.status(400).json({ error: "medicalDocumentUrl is required" }); return;
+    }
+    const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+
+    // Only the owning employee or privileged roles can upload
+    const userId = req.user!.id;
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+    const priv = ["super_admin", "hr_admin", "it_admin", "manager"].includes(req.user!.role ?? "");
+    if (!priv && emp?.id !== existing.employeeId) {
+      res.status(403).json({ error: "Access denied" }); return;
+    }
+
+    // Move from pending_doc → pending so manager can now approve
+    const newStatus = existing.status === "pending_doc" ? "pending" : existing.status;
+    await db.update(leaveRequestsTable).set({
+      medicalDocumentUrl: medicalDocumentUrl.trim(),
+      status: newStatus,
+    }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+
+    const [updated] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    res.json({ ...updated, statusChanged: newStatus !== existing.status });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
