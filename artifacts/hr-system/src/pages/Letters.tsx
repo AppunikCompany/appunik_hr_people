@@ -90,7 +90,7 @@ function GenerateLetterDialog({ open, onClose }: { open: boolean; onClose: () =>
   const [templateId, setTemplateId] = useState("");
   const [employeeId, setEmployeeId] = useState("");
   const { data: templates } = useQuery({ queryKey: ["letter-templates"], queryFn: fetchTemplates });
-  const { data: employees } = useEmployees();
+  const { data: employees } = useEmployees({ status: "active" });
   const qc = useQueryClient();
 
   const mutation = useMutation({

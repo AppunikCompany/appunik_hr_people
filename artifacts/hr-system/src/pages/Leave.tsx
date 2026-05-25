@@ -30,7 +30,7 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const isPrivileged = ["super_admin", "hr_admin", "it_admin", "manager"].includes(currentUser?.role ?? "");
 
   const [form, setForm] = useState({ employeeId: "", leaveTypeId: "", startDate: "", endDate: "", reason: "", leaveDuration: "full_day", medicalDocumentUrl: "" });
-  const { data: employees } = useEmployees();
+  const { data: employees } = useEmployees({ status: "active" });
   const { data: types } = useLeaveTypes();
   const qc = useQueryClient();
 
@@ -285,7 +285,7 @@ function ApproveDialog({ req, onClose }: { req: any; onClose: () => void }) {
   const [approvedByRole, setApprovedByRole] = useState("manager");
   const [comment, setComment] = useState("");
   const qc = useQueryClient();
-  const { data: employees } = useEmployees();
+  const { data: employees } = useEmployees({ status: "active" });
 
   // Find this employee's reporting manager
   const employee = (employees as any[] ?? []).find((e: any) => e.id === req?.employeeId);
@@ -354,7 +354,7 @@ function RejectDialog({ req, onClose }: { req: any; onClose: () => void }) {
   const [approvedByRole, setApprovedByRole] = useState("manager");
   const [comment, setComment] = useState("");
   const qc = useQueryClient();
-  const { data: employees } = useEmployees();
+  const { data: employees } = useEmployees({ status: "active" });
 
   // Find this employee's reporting manager
   const employee = (employees as any[] ?? []).find((e: any) => e.id === req?.employeeId);
@@ -556,7 +556,7 @@ function LeaveBalancesTab() {
   const { data: currentUser } = useCurrentUser();
   const isPrivileged = ["super_admin", "hr_admin", "it_admin", "manager"].includes(currentUser?.role ?? "");
 
-  const { data: employees } = useEmployees();
+  const { data: employees } = useEmployees({ status: "active" });
   const [selectedEmpId, setSelectedEmpId] = useState<string>("");
   const [adjustBalance, setAdjustBalance] = useState<any>(null);
 

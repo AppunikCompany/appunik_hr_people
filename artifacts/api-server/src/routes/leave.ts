@@ -9,12 +9,15 @@ import {
   employeesTable,
   holidaysTable,
 } from "@workspace/db";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
 import { resolveEmployeeId, isPrivileged } from "../lib/ownership";
 
 const router: IRouter = Router();
+
+// Statuses that count as "active" — data for any other status is hidden
+const ACTIVE_STATUSES = ["active", "probation", "on_leave"] as const;
 
 function countBusinessDays(start: Date, end: Date, holidayDates: Set<string> = new Set()): number {
   let count = 0;
@@ -126,14 +129,18 @@ router.get("/leave/balances", requireAuth, async (req, res) => {
       .select({
         balance: leaveBalancesTable,
         leaveType: leaveTypesTable,
+        emp: { status: employeesTable.status },
       })
       .from(leaveBalancesTable)
-      .leftJoin(leaveTypesTable, eq(leaveBalancesTable.leaveTypeId, leaveTypesTable.id));
+      .leftJoin(leaveTypesTable, eq(leaveBalancesTable.leaveTypeId, leaveTypesTable.id))
+      .leftJoin(employeesTable, eq(leaveBalancesTable.employeeId, employeesTable.id));
 
     if (effectiveEmployeeId) balances = balances.filter((b) => b.balance.employeeId === effectiveEmployeeId);
 
     const result = balances
       .filter((b) => b.balance.year === year)
+      // Hide balances for deactivated / deleted employees
+      .filter((b) => b.emp?.status && (ACTIVE_STATUSES as readonly string[]).includes(b.emp.status))
       .map((b) => ({
         id: b.balance.id,
         employeeId: b.balance.employeeId,
@@ -280,7 +287,10 @@ router.get("/leave/requests", requireAuth, async (req, res) => {
       .leftJoin(employeesTable, eq(leaveRequestsTable.employeeId, employeesTable.id))
       .leftJoin(leaveTypesTable, eq(leaveRequestsTable.leaveTypeId, leaveTypesTable.id));
 
-    let filtered = requests;
+    // ── Strip records for deactivated / deleted employees first ──
+    let filtered = requests.filter(
+      (r) => r.emp && (ACTIVE_STATUSES as readonly string[]).includes(r.emp.status)
+    );
 
     if (role === "employee") {
       // Employees can only see their own leave requests — ignore all query params
@@ -300,7 +310,7 @@ router.get("/leave/requests", requireAuth, async (req, res) => {
       if (employeeId) filtered = filtered.filter((r) => r.req.employeeId === employeeId);
       if (status) filtered = filtered.filter((r) => r.req.status === status);
     } else {
-      // hr_admin / super_admin / it_admin — see all, honour query filters
+      // hr_admin / super_admin / it_admin — see all active employees, honour query filters
       if (employeeId) filtered = filtered.filter((r) => r.req.employeeId === employeeId);
       if (status) filtered = filtered.filter((r) => r.req.status === status);
       if (managerId) filtered = filtered.filter((r) => r.emp?.reportingManagerId === managerId);
@@ -732,6 +742,7 @@ router.get("/leave/calendar", requireAuth, async (req, res) => {
 
     const result = requests
       .filter((r) => {
+        if (!r.emp || !(ACTIVE_STATUSES as readonly string[]).includes(r.emp.status)) return false;
         const d = new Date(r.req.startDate);
         return d.getMonth() + 1 === m && d.getFullYear() === y;
       })

@@ -8,7 +8,7 @@ import {
   departmentsTable,
   appConfigTable,
 } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { resolveEmployeeId, canReadEmployee, isPrivileged } from "../lib/ownership";
 import { fireAutomationEvent } from "../lib/automations";
@@ -148,8 +148,14 @@ router.get("/attendance/today", requireAuth, async (req, res): Promise<void> => 
 router.get("/attendance/monthly", requireAuth, async (req, res) => {
   try {
     const { month, year, employeeId } = req.query as Record<string, string>;
+    // Fetch active employees to build an allow-list
+    const activeEmps = await db.select({ id: employeesTable.id }).from(employeesTable)
+      .where(inArray(employeesTable.status, ["active", "probation", "on_leave"]));
+    const activeIds = new Set(activeEmps.map((e) => e.id));
+
     const all = await db.select().from(attendanceRecordsTable);
     const filtered = all.filter((r) => {
+      if (!activeIds.has(r.employeeId)) return false; // hide inactive employees
       const d = new Date(r.date);
       const matchMonth = d.getMonth() + 1 === parseInt(month);
       const matchYear = d.getFullYear() === parseInt(year);

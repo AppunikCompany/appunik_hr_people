@@ -102,7 +102,7 @@ function AddAssetDialog({ open, onClose }: { open: boolean; onClose: () => void 
 
 function AssignAssetDialog({ assetId, open, onClose }: { assetId: string; open: boolean; onClose: () => void }) {
   const [empId, setEmpId] = useState("");
-  const { data: employees } = useEmployees();
+  const { data: employees } = useEmployees({ status: "active" });
   const qc = useQueryClient();
   const mutation = useMutation({
     mutationFn: () => fetchApi(`/assets/${assetId}/assign`, { method: "POST", body: JSON.stringify({ employeeId: empId }) }),

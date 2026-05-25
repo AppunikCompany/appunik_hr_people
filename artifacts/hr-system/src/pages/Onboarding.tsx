@@ -25,7 +25,7 @@ const DEFAULT_TASKS = [
 
 function CreateChecklistDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [empId, setEmpId] = useState("");
-  const { data: employees } = useEmployees();
+  const { data: employees } = useEmployees({ status: "active" });
   const qc = useQueryClient();
   const mutation = useMutation({
     mutationFn: () => fetchApi("/onboarding/checklists", {
