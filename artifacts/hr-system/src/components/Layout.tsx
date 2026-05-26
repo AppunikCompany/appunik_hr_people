@@ -144,11 +144,13 @@ const ALL_NAV_ITEMS: NavItem[] = [
     label: "Letters",
     href: "/letters",
     icon: FileText,
+    roles: ["super_admin", "hr_admin"],
   },
   {
     label: "Self-Service",
     href: "/self-service",
     icon: LayoutDashboard,
+    roles: ["super_admin", "hr_admin"],
   },
   {
     label: "Settings",
