@@ -41,3 +41,19 @@ export const holidaysTable = mysqlTable("people_holidays", {
 });
 
 export type Holiday = typeof holidaysTable.$inferSelect;
+
+// ── Break / Away tracking ─────────────────────────────────────────────────────
+// Each row = one away session within a clocked-in day.
+// breakEnd is NULL while the employee is still away.
+export const attendanceBreaksTable = mysqlTable("people_attendance_breaks", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  attendanceRecordId: varchar("attendance_record_id", { length: 36 }).notNull().references(() => attendanceRecordsTable.id, { onDelete: "cascade" }),
+  employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  date: varchar("date", { length: 20 }).notNull(),
+  breakStart: timestamp("break_start").notNull(),
+  breakEnd: timestamp("break_end"),
+  durationMinutes: double("duration_minutes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type AttendanceBreak = typeof attendanceBreaksTable.$inferSelect;

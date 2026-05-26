@@ -162,12 +162,30 @@ export interface AttendanceTeamEntry {
   employeeId: string;
   employeeName: string;
   department?: string | null;
-  status: "wfo" | "wfh" | "absent";
+  status: "wfo" | "wfh" | "wfh_pending" | "on_leave" | "absent";
   clockIn?: string | null;
   clockOut?: string | null;
   hoursWorked?: number | null;
   isLate?: boolean;
   isHalfDay?: boolean;
+}
+
+export interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  date: string;
+  clockIn?: string | null;
+  clockOut?: string | null;
+  type: string;
+  hoursWorked?: number | null;
+  isLate?: boolean;
+  isHalfDay?: boolean;
+  notes?: string | null;
+  // Break state — only present on /attendance/today response
+  isOnBreak?: boolean;
+  currentBreakStart?: string | null;
+  totalBreakMinutes?: number;
+  breakCount?: number;
 }
 
 export interface Holiday {
@@ -382,6 +400,14 @@ export function useAttendanceTeam() {
   return useQuery({
     queryKey: ["attendance-team"],
     queryFn: () => fetchApi<AttendanceTeamEntry[]>("/attendance/team"),
+  });
+}
+
+export function useAttendanceToday() {
+  return useQuery({
+    queryKey: ["attendance-today"],
+    queryFn: () => fetchApi<AttendanceRecord | null>("/attendance/today"),
+    refetchInterval: 60_000, // refresh every minute
   });
 }
 
