@@ -2,8 +2,14 @@ import { useState, useEffect } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { fetchApi, type AttendanceRecord } from "@/hooks/useApi";
 import { Button } from "@/components/ui/button";
-import { LogIn, LogOut, Home, Clock, Coffee, RotateCcw } from "lucide-react";
+import { LogIn, LogOut, Home, Clock, Coffee, RotateCcw, MoonStar } from "lucide-react";
 import { toast } from "sonner";
+
+// Working-hours window: 8:00 AM – 10:00 PM
+function isWithinWorkingHours(): boolean {
+  const h = new Date().getHours();
+  return h >= 8 && h < 22;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -50,6 +56,13 @@ interface Props {
 
 export function ClockWidget({ record, compact = false }: Props) {
   const qc = useQueryClient();
+
+  // Re-evaluate window every minute so the UI reacts when the clock crosses 8 AM or 10 PM
+  const [withinHours, setWithinHours] = useState(isWithinWorkingHours());
+  useEffect(() => {
+    const id = setInterval(() => setWithinHours(isWithinWorkingHours()), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Clocked-in timer (pauses while on break)
   const workedElapsed = useElapsed(
@@ -98,6 +111,20 @@ export function ClockWidget({ record, compact = false }: Props) {
     onSuccess: () => { invalidate(); toast.success("Welcome back!"); },
     onError: (e: any) => toast.error(e.message),
   });
+
+  // ── Outside working hours (before 8 AM or after 10 PM) ─────────────────────
+  if (!withinHours) {
+    return (
+      <div className="bg-white border border-border rounded-xl p-5 shadow-md">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Today's Attendance</span>
+          <MoonStar className="w-4 h-4 text-muted-foreground" />
+        </div>
+        <p className={`font-semibold text-muted-foreground ${compact ? "text-lg" : "text-base"}`}>Outside working hours</p>
+        <p className="text-xs text-muted-foreground mt-1">Clock-in is available between 8:00 AM and 10:00 PM.</p>
+      </div>
+    );
+  }
 
   // ── Not clocked in ──────────────────────────────────────────────────────────
   if (!record) {
@@ -173,15 +200,17 @@ export function ClockWidget({ record, compact = false }: Props) {
           Away since {time(record.currentBreakStart!)}
           {record.totalBreakMinutes ? ` · Total away today: ${formatMinutes(totalSoFar)}` : ""}
         </p>
-        <Button
-          size="sm"
-          onClick={() => backMut.mutate()}
-          disabled={backMut.isPending}
-          className="w-full bg-amber-500 hover:bg-amber-600 text-white border-0"
-        >
-          <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
-          I'm Back
-        </Button>
+        {withinHours && (
+          <Button
+            size="sm"
+            onClick={() => backMut.mutate()}
+            disabled={backMut.isPending}
+            className="w-full bg-amber-500 hover:bg-amber-600 text-white border-0"
+          >
+            <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+            I'm Back
+          </Button>
+        )}
       </div>
     );
   }
@@ -204,28 +233,30 @@ export function ClockWidget({ record, compact = false }: Props) {
           Since {time(record.clockIn)}{record.isLate ? " · Late" : ""}
           {record.totalBreakMinutes ? ` · Away: ${formatMinutes(record.totalBreakMinutes)}` : ""}
         </p>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => awayMut.mutate()}
-            disabled={awayMut.isPending}
-            className="flex-1 text-amber-600 hover:text-amber-700 border-amber-200 hover:bg-amber-50"
-          >
-            <Coffee className="w-3.5 h-3.5 mr-1.5" />
-            Away
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => clockOutMut.mutate()}
-            disabled={clockOutMut.isPending}
-            className="flex-1 text-red-500 hover:text-red-600 border-red-200 hover:bg-red-50"
-          >
-            <LogOut className="w-3.5 h-3.5 mr-1.5" />
-            Clock Out
-          </Button>
-        </div>
+        {withinHours && (
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => awayMut.mutate()}
+              disabled={awayMut.isPending}
+              className="flex-1 text-amber-600 hover:text-amber-700 border-amber-200 hover:bg-amber-50"
+            >
+              <Coffee className="w-3.5 h-3.5 mr-1.5" />
+              Away
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => clockOutMut.mutate()}
+              disabled={clockOutMut.isPending}
+              className="flex-1 text-red-500 hover:text-red-600 border-red-200 hover:bg-red-50"
+            >
+              <LogOut className="w-3.5 h-3.5 mr-1.5" />
+              Clock Out
+            </Button>
+          </div>
+        )}
       </div>
     );
   }
