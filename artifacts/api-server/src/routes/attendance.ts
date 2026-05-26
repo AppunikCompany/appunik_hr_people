@@ -17,33 +17,45 @@ import { fireAutomationEvent } from "../lib/automations";
 
 const router: IRouter = Router();
 
+// ── Working-hours window: 8:00 AM – 10:00 PM ─────────────────────────────────
+function isWithinWorkingHours(): boolean {
+  const h = new Date().getHours();
+  return h >= 8 && h < 22;
+}
+
 router.post("/attendance/clock-in", requireAuth, async (req, res): Promise<void> => {
   try {
+    if (!isWithinWorkingHours()) {
+      res.status(400).json({ error: "Clock-in is only allowed between 8:00 AM and 10:00 PM" });
+      return;
+    }
+
     const { employeeId: clientId, notes } = req.body as { employeeId?: string; notes?: string };
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
 
     const today = new Date().toISOString().split("T")[0];
-    const existing = await db
+    const [existing] = await db
       .select()
       .from(attendanceRecordsTable)
       .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.date, today)));
 
-    if (existing.length > 0) {
-      res.status(400).json({ error: "Already clocked in today" });
+    if (existing) {
+      const msg = existing.clockOut
+        ? "You've already completed your attendance for today. Use Regularization if you need a correction."
+        : "Already clocked in today";
+      res.status(400).json({ error: msg });
       return;
     }
 
-    const clockIn = new Date();
-    const isLate = clockIn.getHours() > 9 || (clockIn.getHours() === 9 && clockIn.getMinutes() > 30);
-    // If clocking in after 13:00 it counts as a half-day
-    const isHalfDay = clockIn.getHours() >= 13;
     const recId = crypto.randomUUID();
-    await db.insert(attendanceRecordsTable).values({ id: recId, employeeId, date: today, clockIn, type: "wfo", isLate, isHalfDay, notes });
+    // Flexible hours — no concept of "late"; half-day determined at clock-out
+    await db.insert(attendanceRecordsTable).values({
+      id: recId, employeeId, date: today,
+      clockIn: new Date(), type: "wfo",
+      isLate: false, isHalfDay: false, notes,
+    });
     const [record] = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, recId));
-    if (isLate) {
-      fireAutomationEvent({ event: "attendance.late_arrival", employeeId, variables: { date: today } }).catch(console.error);
-    }
     res.status(201).json(record);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -52,6 +64,11 @@ router.post("/attendance/clock-in", requireAuth, async (req, res): Promise<void>
 
 router.post("/attendance/clock-out", requireAuth, async (req, res): Promise<void> => {
   try {
+    if (!isWithinWorkingHours()) {
+      res.status(400).json({ error: "Clock-out is only allowed between 8:00 AM and 10:00 PM" });
+      return;
+    }
+
     const { employeeId: clientId, notes } = req.body as { employeeId?: string; notes?: string };
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
@@ -63,15 +80,41 @@ router.post("/attendance/clock-out", requireAuth, async (req, res): Promise<void
       .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.date, today)));
 
     if (!existing) { res.status(404).json({ error: "No clock-in found for today" }); return; }
+    if (existing.clockOut) { res.status(400).json({ error: "Already clocked out for today" }); return; }
+
+    // Auto-close any open break before clocking out
+    const [openBreak] = await db
+      .select()
+      .from(attendanceBreaksTable)
+      .where(and(eq(attendanceBreaksTable.attendanceRecordId, existing.id), isNull(attendanceBreaksTable.breakEnd)));
+    if (openBreak) {
+      const autoEnd = new Date();
+      const dur = (autoEnd.getTime() - new Date(openBreak.breakStart).getTime()) / 60000;
+      await db.update(attendanceBreaksTable)
+        .set({ breakEnd: autoEnd, durationMinutes: dur })
+        .where(eq(attendanceBreaksTable.id, openBreak.id));
+    }
+
+    // Total break time for this record
+    const allBreaks = await db.select().from(attendanceBreaksTable)
+      .where(eq(attendanceBreaksTable.attendanceRecordId, existing.id));
+    const totalBreakMs = allBreaks.reduce((sum, b) => {
+      if (b.durationMinutes != null) return sum + b.durationMinutes * 60000;
+      if (b.breakEnd) return sum + (new Date(b.breakEnd).getTime() - new Date(b.breakStart).getTime());
+      return sum;
+    }, 0);
 
     const clockOut = new Date();
-    const hoursWorked = existing.clockIn
-      ? (clockOut.getTime() - new Date(existing.clockIn).getTime()) / 3600000
-      : null;
-    // Mark half-day if hours worked < 4 (and not already a half-day from late clock-in)
-    const isHalfDay = existing.isHalfDay || (hoursWorked !== null && hoursWorked < 4);
+    const rawMs = existing.clockIn
+      ? clockOut.getTime() - new Date(existing.clockIn).getTime()
+      : 0;
+    const netMs = Math.max(0, rawMs - totalBreakMs);
+    const hoursWorked = netMs / 3600000;
+    const isHalfDay = hoursWorked < 4;
 
-    await db.update(attendanceRecordsTable).set({ clockOut, hoursWorked, isHalfDay, notes: notes ?? existing.notes }).where(eq(attendanceRecordsTable.id, existing.id));
+    await db.update(attendanceRecordsTable)
+      .set({ clockOut, hoursWorked, isHalfDay, notes: notes ?? existing.notes })
+      .where(eq(attendanceRecordsTable.id, existing.id));
     const [record] = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, existing.id));
     res.json(record);
   } catch (e) {
@@ -81,6 +124,11 @@ router.post("/attendance/clock-out", requireAuth, async (req, res): Promise<void
 
 router.post("/attendance/wfh", requireAuth, async (req, res): Promise<void> => {
   try {
+    if (!isWithinWorkingHours()) {
+      res.status(400).json({ error: "WFH can only be marked between 8:00 AM and 10:00 PM" });
+      return;
+    }
+
     const { employeeId: clientId, notes } = req.body as { employeeId?: string; notes?: string };
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
@@ -93,13 +141,6 @@ router.post("/attendance/wfh", requireAuth, async (req, res): Promise<void> => {
 
     if (existing.length > 0) {
       res.status(400).json({ error: "Already marked attendance today" });
-      return;
-    }
-
-    // WFH cutoff: cannot mark WFH at or after 10:00 AM
-    const now = new Date();
-    if (now.getHours() >= 10) {
-      res.status(400).json({ error: "WFH can only be marked before 10:00 AM" });
       return;
     }
 
