@@ -73,7 +73,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
     icon: Clock,
     module: "attendance",
     // only show for privileged roles — employees get the dedicated "My Attendance" link above
-    roles: ["super_admin", "hr_admin", "manager", "it_admin"],
+    roles: ["super_admin", "hr_admin"],
     children: [
       { label: "Daily View", href: "/attendance" },
       { label: "My Attendance", href: "/attendance/my" },
