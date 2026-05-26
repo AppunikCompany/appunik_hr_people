@@ -31,41 +31,104 @@ const SYSTEM_ROLES: Array<{
   isProtected: boolean;
   permissions: Record<string, Perm>;
 }> = [
+  // ── Super Admin ──────────────────────────────────────────────────────────────
   {
     name: "super_admin",
     description: "Full system access — all modules, all actions",
     isProtected: true,
     permissions: Object.fromEntries(ROLE_MODULES.map((m) => [m, full])),
   },
+
+  // ── HR Admin ─────────────────────────────────────────────────────────────────
+  // Manages everything people-related. Cannot manage user roles (super_admin only).
   {
     name: "hr_admin",
-    description: "HR management — all modules except Roles",
+    description: "HR management — full access to all people modules except Roles",
     isProtected: false,
     permissions: {
-      dashboard: full,
-      employees: full,
-      attendance: full,
-      leave: full,
-      assets: full,
+      dashboard:   full,
+      employees:   full,
+      attendance:  full,
+      leave:       full,
+      assets:      full,
       performance: full,
-      reports: full,
-      payroll: full,
+      reports:     full,
+      payroll:     full,
       automations: full,
-      onboarding: full,
-      settings: full,
-      roles: none,
+      onboarding:  full,
+      settings:    full,
+      roles:       none,   // only super_admin can manage roles
     },
   },
+
+  // ── IT Admin ─────────────────────────────────────────────────────────────────
+  // Manages hardware/software assets and account provisioning.
+  // Can view employee data (to know who to set up), owns the full asset lifecycle,
+  // and completes IT-specific onboarding tasks.
+  {
+    name: "it_admin",
+    description: "IT management — assets, account setup, and read access to people data",
+    isProtected: false,
+    permissions: {
+      dashboard:   viewOnly,
+      employees:   viewOnly,        // view roster to know who to provision
+      attendance:  viewOnly,        // view daily status (WFH / in-office)
+      leave:       none,            // leave decisions are HR/manager territory
+      assets:      full,            // create, assign, return, retire assets
+      performance: none,
+      reports:     viewOnly,        // asset inventory and attendance reports
+      payroll:     none,
+      automations: none,
+      onboarding:  viewCreateEdit,  // complete IT tasks (account setup, device allocation)
+      settings:    viewOnly,        // view company config (work hours, etc.)
+      roles:       none,
+    },
+  },
+
+  // ── Manager ──────────────────────────────────────────────────────────────────
+  // Manages a team. Approves team leaves and WFH, assigns and rates KRAs,
+  // views team attendance and reports. Cannot touch org-level config.
+  {
+    name: "manager",
+    description: "Team management — approve leaves, manage KRAs, view team data",
+    isProtected: false,
+    permissions: {
+      dashboard:   viewOnly,
+      employees:   viewOnly,        // browse employee profiles (own team visible in UI)
+      attendance:  viewOnly,        // daily team view + WFH approval
+      leave:       viewCreateEdit,  // view & approve/reject team leaves; apply own leave
+      assets:      viewOnly,        // view assets assigned to team members
+      performance: viewCreateEdit,  // assign KRAs to team, rate and review
+      reports:     viewOnly,        // attendance, leave utilisation, KRA reports
+      payroll:     none,
+      automations: none,
+      onboarding:  viewOnly,        // track new hire progress
+      settings:    none,
+      roles:       none,
+    },
+  },
+
+  // ── Employee ─────────────────────────────────────────────────────────────────
+  // Self-service only: own attendance (clock in/out), own leave, own KRAs.
+  // Cannot see org-wide data for any module.
   {
     name: "employee",
-    description: "Employee self-service — own leave, attendance, and profile only",
+    description: "Employee self-service — own leave, attendance, KRAs, and profile",
     isProtected: false,
-    permissions: Object.fromEntries(
-      ROLE_MODULES.map((m) => [
-        m,
-        m === "dashboard" || m === "leave" || m === "attendance" ? viewOnly : none,
-      ])
-    ),
+    permissions: {
+      dashboard:   viewOnly,
+      employees:   none,            // cannot browse the employee directory
+      attendance:  viewOnly,        // view own records; clock-in/out is always allowed
+      leave:       full,            // apply, edit, and cancel own leave requests
+      assets:      none,            // asset admin is IT; own assigned assets shown in profile
+      performance: viewOnly,        // view own KRAs and submit self-assessments
+      reports:     none,
+      payroll:     none,
+      automations: none,
+      onboarding:  none,
+      settings:    none,
+      roles:       none,
+    },
   },
 ];
 
