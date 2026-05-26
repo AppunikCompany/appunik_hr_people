@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useAttendanceTeam, useAttendanceToday, useHolidays, useCurrentUser, fetchApi } from "@/hooks/useApi";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
@@ -144,6 +144,13 @@ export default function Attendance() {
     queryFn: () => fetchApi<any>(`/self-service/attendance/${user?.id}?month=${month}&year=${year}`),
     enabled: !!user?.id,
   });
+
+  // Employees should always land on "my" — redirect them away from the team daily view
+  useEffect(() => {
+    if (user && user.role === "employee" && location === "/attendance") {
+      navigate("/attendance/my");
+    }
+  }, [user, location]);
 
   const activeTab =
     location === "/attendance/my" ? "my" :
