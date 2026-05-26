@@ -128,6 +128,7 @@ export default function Attendance() {
   const [month, setMonth] = useState(String(new Date().getMonth() + 1));
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [monthlySubTab, setMonthlySubTab] = useState(false);
+  const [rejectDialog, setRejectDialog] = useState<{ open: boolean; id: string; note: string }>({ open: false, id: "", note: "" });
 
   const { data: team, isLoading } = useAttendanceTeam();
   const { data: holidays, isLoading: holidaysLoading } = useHolidays();
@@ -149,6 +150,25 @@ export default function Attendance() {
     queryKey: ["regularization", user?.id],
     queryFn: () => fetchApi<any[]>("/attendance/regularization"),
     enabled: !!user?.id,
+  });
+
+  // HR: all regularization requests across all employees
+  const { data: allRegularizations, isLoading: regLoading } = useQuery({
+    queryKey: ["regularization-all"],
+    queryFn: () => fetchApi<any[]>("/attendance/regularization"),
+    enabled: !!user && user.role !== "employee",
+  });
+
+  const qc = useQueryClient();
+  const approveMut = useMutation({
+    mutationFn: ({ id, status, reviewNote }: { id: string; status: string; reviewNote?: string }) =>
+      fetchApi(`/attendance/regularization/${id}`, { method: "PATCH", body: JSON.stringify({ status, reviewNote }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["regularization-all"] });
+      qc.invalidateQueries({ queryKey: ["regularization"] });
+      toast.success("Request updated");
+    },
+    onError: (e: any) => toast.error(e.message),
   });
 
   // Employees should always land on "my" — redirect them away from the team daily view
@@ -317,6 +337,78 @@ export default function Attendance() {
               </div>
             </>
           )}
+
+          {/* ── HR: Regularization Requests ── */}
+          <div className="mt-8">
+            <h3 className="text-sm font-semibold text-foreground mb-3">Regularization Requests</h3>
+            <div className="bg-white border border-border rounded-lg shadow-sm overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
+                    <th className="text-left px-5 py-3">Employee</th>
+                    <th className="text-left px-5 py-3">Date</th>
+                    <th className="text-left px-5 py-3">Req. Clock In</th>
+                    <th className="text-left px-5 py-3">Req. Clock Out</th>
+                    <th className="text-left px-5 py-3">Reason</th>
+                    <th className="text-left px-5 py-3">Status</th>
+                    <th className="text-left px-5 py-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {regLoading ? (
+                    <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
+                  ) : !allRegularizations || allRegularizations.length === 0 ? (
+                    <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">No regularization requests</td></tr>
+                  ) : allRegularizations.map((r: any, i: number) => (
+                    <tr key={r.id} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
+                      <td className="px-5 py-3 font-medium text-foreground">{r.employeeName || "—"}</td>
+                      <td className="px-5 py-3 text-muted-foreground">{r.date}</td>
+                      <td className="px-5 py-3 text-muted-foreground">
+                        {r.requestedClockIn ? new Date(r.requestedClockIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                      </td>
+                      <td className="px-5 py-3 text-muted-foreground">
+                        {r.requestedClockOut ? new Date(r.requestedClockOut).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                      </td>
+                      <td className="px-5 py-3 text-muted-foreground max-w-[180px] truncate" title={r.reason}>{r.reason}</td>
+                      <td className="px-5 py-3">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                          r.status === "approved" ? "bg-green-100 text-green-700" :
+                          r.status === "rejected" ? "bg-red-100 text-red-700" :
+                          "bg-amber-100 text-amber-700"
+                        }`}>
+                          {r.status === "approved" ? "Approved" : r.status === "rejected" ? "Rejected" : "Pending"}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3">
+                        {r.status === "pending" ? (
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
+                              disabled={approveMut.isPending}
+                              onClick={() => approveMut.mutate({ id: r.id, status: "approved" })}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                              onClick={() => setRejectDialog({ open: true, id: r.id, note: "" })}
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{r.reviewNote ? `"${r.reviewNote}"` : "—"}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </TabsContent>
 
         {/* ── MY ATTENDANCE ── */}
@@ -487,6 +579,37 @@ export default function Attendance() {
 
       <AddHolidayDialog open={addHoliday} onClose={() => setAddHoliday(false)} />
       <RegularizationDialog open={regularizationOpen} onClose={() => setRegularizationOpen(false)} date={regularizationDate} />
+
+      {/* ── Reject regularization dialog ── */}
+      <Dialog open={rejectDialog.open} onOpenChange={(o) => { if (!o) setRejectDialog({ open: false, id: "", note: "" }); }}>
+        <DialogContent onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>Reject Regularization Request</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">Optionally provide a reason for rejection:</p>
+            <Textarea
+              value={rejectDialog.note}
+              onChange={(e) => setRejectDialog((d) => ({ ...d, note: e.target.value }))}
+              rows={3}
+              placeholder="e.g. Timing not matching system logs..."
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectDialog({ open: false, id: "", note: "" })}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={approveMut.isPending}
+              onClick={() => {
+                approveMut.mutate(
+                  { id: rejectDialog.id, status: "rejected", reviewNote: rejectDialog.note.trim() || undefined },
+                  { onSuccess: () => setRejectDialog({ open: false, id: "", note: "" }) }
+                );
+              }}
+            >
+              {approveMut.isPending ? "Rejecting..." : "Reject"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageContainer>
   );
 }
