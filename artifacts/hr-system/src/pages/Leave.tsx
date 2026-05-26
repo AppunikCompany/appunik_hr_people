@@ -632,6 +632,9 @@ function LeaveBalancesTab() {
                         <span className={`font-semibold ${b.balance <= 0 ? "text-red-600" : b.balance <= 2 ? "text-amber-600" : "text-green-700"}`}>
                           {b.balance}
                         </span>
+                        {b.carriedForward > 0 && (
+                          <div className="text-[10px] text-blue-600 mt-0.5">incl. {b.carriedForward}d carried</div>
+                        )}
                         <div className="mt-1 w-full max-w-[80px] mx-auto h-1.5 rounded-full bg-secondary overflow-hidden">
                           <div
                             className={`h-full rounded-full ${b.balance <= 0 ? "bg-red-500" : b.balance <= 2 ? "bg-amber-500" : "bg-green-500"}`}

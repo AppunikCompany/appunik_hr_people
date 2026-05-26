@@ -149,6 +149,7 @@ router.get("/leave/balances", requireAuth, async (req, res) => {
         leaveTypeCode: b.leaveType?.code ?? "",
         balance: b.balance.balance,
         used: b.balance.used,
+        carriedForward: b.balance.carriedForward ?? 0,
         year: b.balance.year,
       }));
 
@@ -207,6 +208,162 @@ router.post("/leave/balances/allocate-bulk", requireAuth, requireRole("super_adm
       leaveTypes: leaveTypes.length,
       year,
     });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Year-end carry-forward ────────────────────────────────────────────────────
+// For every active employee × every leave type that has isCarryForward=true:
+//   remaining = balance - used  (of fromYear)
+//   carryAmount = min(remaining, maxCarryForward ?? 5)
+// Adds carryAmount to the toYear (fromYear+1) balance, creating the row if needed.
+// Safe to run multiple times — will not double-count (carries only what isn't already
+// recorded in carriedForward on the destination row).
+router.post("/leave/balances/carry-forward", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const fromYear = parseInt((req.body as any).fromYear) || new Date().getFullYear() - 1;
+    const toYear = fromYear + 1;
+
+    const [employees, leaveTypes] = await Promise.all([
+      db.select({ id: employeesTable.id, firstName: employeesTable.firstName, lastName: employeesTable.lastName })
+        .from(employeesTable).where(eq(employeesTable.status, "active")),
+      db.select().from(leaveTypesTable).where(and(eq(leaveTypesTable.isActive, true), eq(leaveTypesTable.isCarryForward, true))),
+    ]);
+
+    if (leaveTypes.length === 0) {
+      res.json({ message: "No leave types have carry-forward enabled", carried: 0, details: [] });
+      return;
+    }
+
+    const leaveTypeIds = leaveTypes.map((lt) => lt.id);
+    const employeeIds = employees.map((e) => e.id);
+
+    const [fromBalances, toBalances] = await Promise.all([
+      db.select().from(leaveBalancesTable).where(and(
+        eq(leaveBalancesTable.year, fromYear),
+        inArray(leaveBalancesTable.employeeId, employeeIds),
+        inArray(leaveBalancesTable.leaveTypeId, leaveTypeIds),
+      )),
+      db.select().from(leaveBalancesTable).where(and(
+        eq(leaveBalancesTable.year, toYear),
+        inArray(leaveBalancesTable.employeeId, employeeIds),
+        inArray(leaveBalancesTable.leaveTypeId, leaveTypeIds),
+      )),
+    ]);
+
+    const fromMap = new Map(fromBalances.map((b) => [`${b.employeeId}::${b.leaveTypeId}`, b]));
+    const toMap = new Map(toBalances.map((b) => [`${b.employeeId}::${b.leaveTypeId}`, b]));
+    const ltMap = new Map(leaveTypes.map((lt) => [lt.id, lt]));
+    const empMap = new Map(employees.map((e) => [e.id, `${e.firstName} ${e.lastName}`]));
+
+    const details: Array<{ employeeName: string; leaveType: string; remaining: number; carried: number }> = [];
+    let totalCarried = 0;
+
+    for (const emp of employees) {
+      for (const lt of leaveTypes) {
+        const key = `${emp.id}::${lt.id}`;
+        const from = fromMap.get(key);
+        const to = toMap.get(key);
+
+        // No previous year record → nothing to carry
+        const remaining = from ? Math.max(0, (from.balance ?? 0) - (from.used ?? 0)) : 0;
+        if (remaining <= 0) continue;
+
+        const maxCarry = lt.maxCarryForward ?? 5;
+        const carryAmount = Math.min(remaining, maxCarry);
+
+        // Skip if this destination row already has carry-forward recorded (idempotent)
+        const alreadyCarried = to?.carriedForward ?? 0;
+        if (alreadyCarried >= carryAmount) continue;
+
+        const additionalCarry = carryAmount - alreadyCarried;
+
+        if (to) {
+          await db.update(leaveBalancesTable)
+            .set({
+              balance: (to.balance ?? 0) + additionalCarry,
+              carriedForward: carryAmount,
+            })
+            .where(eq(leaveBalancesTable.id, to.id));
+        } else {
+          // Create next-year row with fresh entitlement + carry
+          await db.insert(leaveBalancesTable).values({
+            id: crypto.randomUUID(),
+            employeeId: emp.id,
+            leaveTypeId: lt.id,
+            balance: lt.maxDaysPerYear + carryAmount,
+            used: 0,
+            carriedForward: carryAmount,
+            year: toYear,
+          });
+        }
+
+        details.push({
+          employeeName: empMap.get(emp.id) ?? emp.id,
+          leaveType: lt.name,
+          remaining,
+          carried: carryAmount,
+        });
+        totalCarried += carryAmount;
+      }
+    }
+
+    res.json({ fromYear, toYear, carried: totalCarried, employees: details.length ? [...new Set(details.map(d => d.employeeName))].length : 0, details });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── Preview carry-forward (dry run, no writes) ────────────────────────────────
+router.get("/leave/balances/carry-forward/preview", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const fromYear = parseInt(req.query.fromYear as string) || new Date().getFullYear() - 1;
+    const toYear = fromYear + 1;
+
+    const [employees, leaveTypes] = await Promise.all([
+      db.select({ id: employeesTable.id, firstName: employeesTable.firstName, lastName: employeesTable.lastName })
+        .from(employeesTable).where(eq(employeesTable.status, "active")),
+      db.select().from(leaveTypesTable).where(and(eq(leaveTypesTable.isActive, true), eq(leaveTypesTable.isCarryForward, true))),
+    ]);
+
+    const leaveTypeIds = leaveTypes.map((lt) => lt.id);
+    const employeeIds = employees.map((e) => e.id);
+
+    const [fromBalances, toBalances] = await Promise.all([
+      db.select().from(leaveBalancesTable).where(and(
+        eq(leaveBalancesTable.year, fromYear),
+        inArray(leaveBalancesTable.employeeId, employeeIds),
+        inArray(leaveBalancesTable.leaveTypeId, leaveTypeIds),
+      )),
+      db.select().from(leaveBalancesTable).where(and(
+        eq(leaveBalancesTable.year, toYear),
+        inArray(leaveBalancesTable.employeeId, employeeIds),
+        inArray(leaveBalancesTable.leaveTypeId, leaveTypeIds),
+      )),
+    ]);
+
+    const fromMap = new Map(fromBalances.map((b) => [`${b.employeeId}::${b.leaveTypeId}`, b]));
+    const toMap = new Map(toBalances.map((b) => [`${b.employeeId}::${b.leaveTypeId}`, b]));
+    const empMap = new Map(employees.map((e) => [e.id, `${e.firstName} ${e.lastName}`]));
+
+    const details: Array<{ employeeName: string; leaveType: string; remaining: number; willCarry: number; alreadyCarried: number }> = [];
+
+    for (const emp of employees) {
+      for (const lt of leaveTypes) {
+        const key = `${emp.id}::${lt.id}`;
+        const from = fromMap.get(key);
+        const to = toMap.get(key);
+        const remaining = from ? Math.max(0, (from.balance ?? 0) - (from.used ?? 0)) : 0;
+        if (remaining <= 0) continue;
+        const maxCarry = lt.maxCarryForward ?? 5;
+        const willCarry = Math.min(remaining, maxCarry);
+        const alreadyCarried = to?.carriedForward ?? 0;
+        details.push({ employeeName: empMap.get(emp.id) ?? emp.id, leaveType: lt.name, remaining, willCarry, alreadyCarried });
+      }
+    }
+
+    res.json({ fromYear, toYear, leaveTypesWithCarryForward: leaveTypes.map(lt => ({ name: lt.name, maxCarryForward: lt.maxCarryForward ?? 5 })), details });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

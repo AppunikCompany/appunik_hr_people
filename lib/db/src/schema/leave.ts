@@ -24,6 +24,8 @@ export const leaveBalancesTable = mysqlTable("people_leave_balances", {
   leaveTypeId: varchar("leave_type_id", { length: 36 }).notNull().references(() => leaveTypesTable.id, { onDelete: "cascade" }),
   balance: double("balance").notNull().default(0),
   used: double("used").notNull().default(0),
+  // Days carried forward from the previous year (0 if none). Included in balance.
+  carriedForward: double("carried_forward").notNull().default(0),
   year: int("year").notNull(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });

@@ -14,7 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { Plus, Trash2, Edit, Lock, Shield, Users, CheckCircle2, Loader2 } from "lucide-react";
+import { Plus, Trash2, Edit, Lock, Shield, Users, CheckCircle2, Loader2, ArrowRight, AlertCircle } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 // ─── Departments ──────────────────────────────────────────────────────────────
@@ -386,6 +387,149 @@ function AllocateLeavesPanel() {
   );
 }
 
+// ─── Carry Forward Panel ──────────────────────────────────────────────────────
+function CarryForwardPanel() {
+  const currentYear = new Date().getFullYear();
+  const [fromYear, setFromYear] = useState(currentYear - 1);
+  const [confirmed, setConfirmed] = useState(false);
+  const [result, setResult] = useState<{ carried: number; employees: number; details: Array<{ employeeName: string; leaveType: string; remaining: number; carried: number }> } | null>(null);
+  const qc = useQueryClient();
+
+  // Preview — fetch whenever fromYear changes
+  const { data: preview, isLoading: previewLoading } = useQuery({
+    queryKey: ["carry-forward-preview", fromYear],
+    queryFn: () => fetchApi<any>(`/leave/balances/carry-forward/preview?fromYear=${fromYear}`),
+  });
+
+  const runCarryForward = useMutation({
+    mutationFn: () => fetchApi("/leave/balances/carry-forward", {
+      method: "POST",
+      body: JSON.stringify({ fromYear }),
+    }),
+    onSuccess: (data: any) => {
+      setResult(data);
+      setConfirmed(false);
+      qc.invalidateQueries({ queryKey: ["leave-balances"] });
+      if (data.carried === 0) {
+        toast.info("No leaves to carry forward (already processed or all balances used)");
+      } else {
+        toast.success(`Carry-forward complete — ${data.carried} days carried for ${data.employees} employees`);
+      }
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const toYear = fromYear + 1;
+  const previewRows = preview?.details ?? [];
+  const hasEligible = previewRows.some((r: any) => r.willCarry > r.alreadyCarried);
+
+  return (
+    <div className="bg-white border border-border rounded-lg shadow-sm p-5 mt-4">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">Year-End Leave Carry Forward</h3>
+          <p className="text-xs text-muted-foreground mt-1 max-w-lg">
+            Carries unused leave balances from one year into the next, up to the per-type maximum
+            (default <strong>5 days</strong>). Only leave types with <strong>Carry Forward</strong> enabled are processed.
+            Safe to run multiple times — already-carried amounts are not doubled.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <select
+            value={fromYear}
+            onChange={(e) => { setFromYear(Number(e.target.value)); setResult(null); setConfirmed(false); }}
+            className="border border-border rounded-md px-2 py-1.5 text-sm bg-background"
+          >
+            {[currentYear - 2, currentYear - 1, currentYear].map((y) => (
+              <option key={y} value={y}>{y} → {y + 1}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Preview table */}
+      {previewLoading ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground py-4">
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading preview…
+        </div>
+      ) : previewRows.length === 0 ? (
+        <div className="rounded-md bg-secondary border border-border px-4 py-3 text-xs text-muted-foreground">
+          No employees have unused leave balances for {fromYear} on carry-forward eligible leave types.
+        </div>
+      ) : (
+        <div className="border border-border rounded-lg overflow-hidden mb-4">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-secondary text-muted-foreground uppercase tracking-wider">
+                <th className="text-left px-4 py-2.5">Employee</th>
+                <th className="text-left px-4 py-2.5">Leave Type</th>
+                <th className="text-right px-4 py-2.5">Remaining in {fromYear}</th>
+                <th className="text-right px-4 py-2.5">Will Carry → {toYear}</th>
+                <th className="text-right px-4 py-2.5">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {previewRows.map((row: any, i: number) => {
+                const pending = row.willCarry > row.alreadyCarried;
+                return (
+                  <tr key={i} className="hover:bg-background">
+                    <td className="px-4 py-2.5 font-medium text-foreground">{row.employeeName}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{row.leaveType}</td>
+                    <td className="px-4 py-2.5 text-right text-muted-foreground">{row.remaining} days</td>
+                    <td className="px-4 py-2.5 text-right font-semibold text-foreground">{row.willCarry} days</td>
+                    <td className="px-4 py-2.5 text-right">
+                      {pending
+                        ? <span className="text-amber-600 font-medium">Pending</span>
+                        : <span className="text-green-600 font-medium">✓ Done</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Confirm + Run */}
+      {hasEligible && !result && (
+        <div className="flex items-center gap-3">
+          {!confirmed ? (
+            <Button size="sm" variant="outline" onClick={() => setConfirmed(true)} className="border-amber-300 text-amber-700 hover:bg-amber-50">
+              <ArrowRight className="w-3.5 h-3.5 mr-1.5" />
+              Run Carry Forward ({fromYear} → {toYear})
+            </Button>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                This will update leave balances for {toYear}. Confirm?
+              </div>
+              <Button size="sm" onClick={() => runCarryForward.mutate()} disabled={runCarryForward.isPending}>
+                {runCarryForward.isPending ? <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />Processing…</> : "Yes, Run It"}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setConfirmed(false)}>Cancel</Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Result */}
+      {result && (
+        <div className="rounded-md bg-secondary border border-border px-4 py-3 flex items-start gap-3">
+          <CheckCircle2 className="w-4 h-4 text-green-600 mt-0.5 flex-shrink-0" />
+          <div className="text-xs text-foreground space-y-0.5">
+            <p className="font-medium">Carry-forward complete: {fromYear} → {toYear}</p>
+            <p className="text-muted-foreground">
+              <strong className="text-foreground">{result.carried}</strong> total days carried across{" "}
+              <strong className="text-foreground">{result.employees}</strong> employees.
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Settings Page ───────────────────────────────────────────────────────
 
 export default function Settings() {
@@ -583,6 +727,9 @@ export default function Settings() {
         <TabsContent value="leave-policies">
           {/* Bulk Allocation Panel */}
           <AllocateLeavesPanel />
+
+          {/* Year-End Carry Forward Panel */}
+          <CarryForwardPanel />
 
           <div className="bg-white border border-border rounded-lg shadow-sm mt-5">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
