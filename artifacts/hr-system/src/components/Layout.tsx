@@ -21,6 +21,7 @@ import {
   ChevronDown,
   LayoutDashboard,
   FileText,
+  AlarmClock,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -38,6 +39,8 @@ interface NavItem {
   href: string;
   icon: React.ComponentType<{ className?: string }>;
   module?: string;
+  /** If set, only show this item for these roles */
+  roles?: string[];
   children?: { label: string; href: string }[];
 }
 
@@ -58,13 +61,21 @@ const ALL_NAV_ITEMS: NavItem[] = [
     ],
   },
   {
+    // Employees always see this — no module permission required
+    label: "My Attendance",
+    href: "/attendance/my",
+    icon: AlarmClock,
+    roles: ["employee"],
+  },
+  {
     label: "Attendance",
     href: "/attendance",
     icon: Clock,
     module: "attendance",
-    // children are role-filtered in the layout render
+    // only show for privileged roles — employees get the dedicated "My Attendance" link above
+    roles: ["super_admin", "hr_admin", "manager", "it_admin"],
     children: [
-      { label: "Daily View", href: "/attendance", roles: ["super_admin", "hr_admin", "manager", "it_admin"] },
+      { label: "Daily View", href: "/attendance" },
       { label: "My Attendance", href: "/attendance/my" },
       { label: "Holidays", href: "/attendance/holidays" },
     ] as any,
@@ -262,9 +273,12 @@ export function Layout({ children }: LayoutProps) {
     document.title = systemName;
   }, [systemName]);
 
-  // Filter nav items based on user permissions
+  // Filter nav items based on role + module permissions
   const navItems = ALL_NAV_ITEMS.filter((item) => {
-    if (!item.module) return true; // Self-Service has no module restriction
+    // Top-level role whitelist — if set, only show for those roles (works even before permissions load)
+    if (item.roles) return item.roles.includes(user?.role ?? "employee");
+    // No module restriction — always visible
+    if (!item.module) return true;
     if (!user) return false;
     if (user.role === "super_admin") return true;
     const perm = user.permissions?.[item.module];

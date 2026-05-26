@@ -343,7 +343,7 @@ function AdminDashboard({ user, greeting, today }: { user: any; greeting: string
 
 // ── Main Dashboard (role-router) ─────────────────────────────────────────────
 export default function Dashboard() {
-  const { data: user } = useCurrentUser();
+  const { data: user, isLoading } = useCurrentUser();
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -351,7 +351,21 @@ export default function Dashboard() {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
 
-  if (!user) return null;
+  if (isLoading || !user) {
+    return (
+      <div className="p-6 max-w-[1200px] mx-auto">
+        <div className="mb-8">
+          <div className="h-3 w-40 bg-secondary rounded animate-pulse mb-2" />
+          <div className="h-7 w-64 bg-secondary rounded animate-pulse" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="bg-white border border-border rounded-xl p-5 shadow-md h-32 animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   if (user.role === "employee") {
     return <EmployeeDashboard user={user} greeting={greeting} today={today} />;

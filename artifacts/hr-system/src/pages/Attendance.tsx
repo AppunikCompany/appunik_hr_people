@@ -174,9 +174,9 @@ export default function Attendance() {
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
 
-        {/* ── Tab navigation bar ── */}
+        {/* ── Tab navigation bar — Daily View only for privileged roles ── */}
         <TabsList className="mb-4">
-          {user?.role !== "employee" && (
+          {user && user.role !== "employee" && (
             <TabsTrigger value="daily">Daily View</TabsTrigger>
           )}
           <TabsTrigger value="my">My Attendance</TabsTrigger>
