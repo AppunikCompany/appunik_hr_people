@@ -57,3 +57,22 @@ export const attendanceBreaksTable = mysqlTable("people_attendance_breaks", {
 });
 
 export type AttendanceBreak = typeof attendanceBreaksTable.$inferSelect;
+
+// ── Attendance Regularization Requests ───────────────────────────────────────
+// Employees submit these when they missed a clock-in or clock-out.
+// HR admin reviews and approves/rejects. On approval the attendance record is
+// patched automatically.
+export const attendanceRegularizationsTable = mysqlTable("people_attendance_regularizations", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  date: varchar("date", { length: 20 }).notNull(),
+  requestedClockIn: timestamp("requested_clock_in"),
+  requestedClockOut: timestamp("requested_clock_out"),
+  reason: text("reason").notNull(),
+  status: varchar("status", { length: 20 }).notNull().default("pending"), // pending | approved | rejected
+  reviewNote: text("review_note"),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type AttendanceRegularization = typeof attendanceRegularizationsTable.$inferSelect;

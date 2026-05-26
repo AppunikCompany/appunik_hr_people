@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import {
   attendanceRecordsTable,
   attendanceBreaksTable,
+  attendanceRegularizationsTable,
   overtimeLogsTable,
   holidaysTable,
   employeesTable,
@@ -10,7 +11,7 @@ import {
   appConfigTable,
   leaveRequestsTable,
 } from "@workspace/db";
-import { eq, and, inArray, lte, gte, isNull, desc } from "drizzle-orm";
+import { eq, and, inArray, lte, gte, isNull, desc, or } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { resolveEmployeeId, canReadEmployee, isPrivileged } from "../lib/ownership";
 import { fireAutomationEvent } from "../lib/automations";
@@ -518,15 +519,18 @@ router.post("/attendance/regularization", requireAuth, async (req, res): Promise
     if (!reason || !reason.trim()) { res.status(400).json({ error: "Reason is required" }); return; }
 
     const id = crypto.randomUUID();
-    const clockIn = requestedClockIn ? new Date(requestedClockIn) : null;
-    const clockOut = requestedClockOut ? new Date(requestedClockOut) : null;
+    await db.insert(attendanceRegularizationsTable).values({
+      id,
+      employeeId,
+      date,
+      requestedClockIn: requestedClockIn ? new Date(`${date}T${requestedClockIn}`) : null,
+      requestedClockOut: requestedClockOut ? new Date(`${date}T${requestedClockOut}`) : null,
+      reason: reason.trim(),
+      status: "pending",
+    });
 
-    await (db as any).execute(
-      `INSERT INTO people_attendance_regularizations (id, employee_id, date, requested_clock_in, requested_clock_out, reason, status) VALUES (?, ?, ?, ?, ?, ?, 'pending')`,
-      [id, employeeId, date, clockIn, clockOut, reason.trim()]
-    );
-
-    res.status(201).json({ id, employeeId, date, requestedClockIn, requestedClockOut, reason: reason.trim(), status: "pending" });
+    const [created] = await db.select().from(attendanceRegularizationsTable).where(eq(attendanceRegularizationsTable.id, id));
+    res.status(201).json(created);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -538,24 +542,30 @@ router.get("/attendance/regularization", requireAuth, async (req, res): Promise<
     let employeeId: string | undefined;
 
     if (isPrivileged(req)) {
-      employeeId = clientId;
+      employeeId = clientId; // hr_admin/super_admin can filter by employee, or omit for all
     } else {
       const resolved = await resolveEmployeeId(req, res, clientId);
       if (!resolved) return;
       employeeId = resolved;
     }
 
-    let query = `SELECT r.*, CONCAT(e.first_name, ' ', e.last_name) as employee_name FROM people_attendance_regularizations r JOIN people_employees e ON r.employee_id = e.id`;
-    const params: any[] = [];
+    const rows = await db
+      .select()
+      .from(attendanceRegularizationsTable)
+      .where(employeeId ? eq(attendanceRegularizationsTable.employeeId, employeeId) : undefined)
+      .orderBy(desc(attendanceRegularizationsTable.createdAt))
+      .limit(100);
 
-    if (employeeId) {
-      query += ` WHERE r.employee_id = ?`;
-      params.push(employeeId);
-    }
-    query += ` ORDER BY r.created_at DESC LIMIT 100`;
+    // Attach employee names
+    const empIds = [...new Set(rows.map((r) => r.employeeId))];
+    const emps = empIds.length
+      ? await db.select({ id: employeesTable.id, firstName: employeesTable.firstName, lastName: employeesTable.lastName })
+          .from(employeesTable)
+          .where(inArray(employeesTable.id, empIds))
+      : [];
+    const empMap = new Map(emps.map((e) => [e.id, `${e.firstName} ${e.lastName}`]));
 
-    const [rows] = await (db as any).execute(query, params);
-    res.json(rows);
+    res.json(rows.map((r) => ({ ...r, employeeName: empMap.get(r.employeeId) ?? "" })));
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
@@ -567,38 +577,41 @@ router.patch("/attendance/regularization/:id", requireAuth, requireRole("super_a
     const { status, reviewNote } = req.body as { status: string; reviewNote?: string };
     if (!["approved", "rejected"].includes(status)) { res.status(400).json({ error: "Status must be approved or rejected" }); return; }
 
-    const reviewerId = (req as any).user?.id ?? null;
+    await db.update(attendanceRegularizationsTable)
+      .set({ status, reviewNote: reviewNote ?? null, reviewedAt: new Date() })
+      .where(eq(attendanceRegularizationsTable.id, id));
 
-    await (db as any).execute(
-      `UPDATE people_attendance_regularizations SET status = ?, review_note = ?, reviewed_at = NOW() WHERE id = ?`,
-      [status, reviewNote ?? null, id]
-    );
-
-    // If approved, update attendance record
+    // On approval: patch or create the attendance record
     if (status === "approved") {
-      const [[reg]] = await (db as any).execute(`SELECT * FROM people_attendance_regularizations WHERE id = ?`, [id]);
+      const [reg] = await db.select().from(attendanceRegularizationsTable).where(eq(attendanceRegularizationsTable.id, id));
       if (reg) {
-        // Check if record exists
-        const [[existing]] = await (db as any).execute(
-          `SELECT id FROM people_attendance_records WHERE employee_id = ? AND date = ?`,
-          [reg.employee_id, reg.date]
-        );
+        const [existing] = await db.select().from(attendanceRecordsTable)
+          .where(and(eq(attendanceRecordsTable.employeeId, reg.employeeId), eq(attendanceRecordsTable.date, reg.date)));
+
         if (existing) {
-          await (db as any).execute(
-            `UPDATE people_attendance_records SET clock_in = COALESCE(?, clock_in), clock_out = COALESCE(?, clock_out), updated_at = NOW() WHERE id = ?`,
-            [reg.requested_clock_in, reg.requested_clock_out, existing.id]
-          );
+          await db.update(attendanceRecordsTable)
+            .set({
+              clockIn: reg.requestedClockIn ?? existing.clockIn,
+              clockOut: reg.requestedClockOut ?? existing.clockOut,
+            })
+            .where(eq(attendanceRecordsTable.id, existing.id));
         } else {
-          const newId = crypto.randomUUID();
-          await (db as any).execute(
-            `INSERT INTO people_attendance_records (id, employee_id, date, clock_in, clock_out, type, is_late, is_half_day) VALUES (?, ?, ?, ?, ?, 'wfo', 0, 0)`,
-            [newId, reg.employee_id, reg.date, reg.requested_clock_in, reg.requested_clock_out]
-          );
+          await db.insert(attendanceRecordsTable).values({
+            id: crypto.randomUUID(),
+            employeeId: reg.employeeId,
+            date: reg.date,
+            clockIn: reg.requestedClockIn ?? undefined,
+            clockOut: reg.requestedClockOut ?? undefined,
+            type: "wfo",
+            isLate: false,
+            isHalfDay: false,
+          });
         }
       }
     }
 
-    res.json({ id, status });
+    const [updated] = await db.select().from(attendanceRegularizationsTable).where(eq(attendanceRegularizationsTable.id, id));
+    res.json(updated);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
