@@ -728,9 +728,6 @@ export default function Settings() {
           {/* Bulk Allocation Panel */}
           <AllocateLeavesPanel />
 
-          {/* Year-End Carry Forward Panel */}
-          <CarryForwardPanel />
-
           <div className="bg-white border border-border rounded-lg shadow-sm mt-5">
             <div className="flex items-center justify-between px-5 py-4 border-b border-border">
               <h3 className="text-sm font-semibold">Leave Types & Policies</h3>

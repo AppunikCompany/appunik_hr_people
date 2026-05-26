@@ -489,17 +489,21 @@ function LeaveCalendarTab() {
 
 // ─── Adjust Balance Dialog ────────────────────────────────────────────────────
 function AdjustBalanceDialog({ balance, onClose }: { balance: any; onClose: () => void }) {
-  const allocated = balance.used + balance.balance;
+  // annual entitlement = total balance minus any carry-forward already recorded
+  const annualEntitlement = (balance.used + balance.balance) - (balance.carriedForward ?? 0);
   const [usedStr, setUsedStr] = useState(String(balance.used));
+  const [carryStr, setCarryStr] = useState(String(balance.carriedForward ?? 0));
   const qc = useQueryClient();
 
-  const used = parseFloat(usedStr) || 0;
-  const remaining = Math.max(0, allocated - used);
+  const used = Math.max(0, parseFloat(usedStr) || 0);
+  const carried = Math.max(0, parseFloat(carryStr) || 0);
+  const totalBalance = annualEntitlement + carried;   // new total entitlement
+  const remaining = Math.max(0, totalBalance - used);
 
   const mutation = useMutation({
     mutationFn: () => fetchApi(`/leave/balances/${balance.id}`, {
       method: "PATCH",
-      body: JSON.stringify({ balance: remaining, used }),
+      body: JSON.stringify({ balance: remaining, used, carriedForward: carried }),
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leave-balances"] });
@@ -516,28 +520,61 @@ function AdjustBalanceDialog({ balance, onClose }: { balance: any; onClose: () =
         <div className="space-y-4 py-2">
           <div className="rounded-md bg-secondary px-3 py-2 text-sm">
             <p className="font-medium text-foreground">{balance.leaveTypeName}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Total allocated: <strong>{allocated} days</strong> for {balance.year}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Annual entitlement: <strong>{annualEntitlement} days</strong> · Year: {balance.year}
+            </p>
           </div>
+
+          <div>
+            <Label>Carry Forward Days (from previous year)</Label>
+            <Input
+              type="number"
+              min="0"
+              max="365"
+              step="0.5"
+              value={carryStr}
+              onChange={e => setCarryStr(e.target.value)}
+              className="mt-1"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Extra days carried over from last year. Added on top of the annual entitlement.
+            </p>
+          </div>
+
           <div>
             <Label>Days Already Used</Label>
             <Input
               type="number"
               min="0"
-              max={allocated}
+              max={totalBalance}
               step="0.5"
               value={usedStr}
               onChange={e => setUsedStr(e.target.value)}
               className="mt-1"
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Enter how many days were consumed (including from the previous system).
+              Days consumed so far this year (approved leaves).
             </p>
           </div>
-          <div className="rounded-md bg-secondary px-3 py-2 text-sm flex justify-between">
-            <span className="text-muted-foreground">Remaining after adjustment</span>
-            <span className={`font-semibold ${remaining <= 0 ? "text-red-600" : remaining <= 2 ? "text-amber-600" : "text-green-700"}`}>
-              {remaining} days
-            </span>
+
+          <div className="rounded-md bg-secondary px-3 py-2 text-sm space-y-1.5">
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Annual entitlement</span><span>{annualEntitlement}d</span>
+            </div>
+            {carried > 0 && (
+              <div className="flex justify-between text-xs text-blue-600">
+                <span>+ Carry forward</span><span>+{carried}d</span>
+              </div>
+            )}
+            <div className="flex justify-between text-xs text-muted-foreground border-t border-border pt-1.5">
+              <span>Used</span><span>−{used}d</span>
+            </div>
+            <div className="flex justify-between text-sm font-semibold">
+              <span>Remaining</span>
+              <span className={remaining <= 0 ? "text-red-600" : remaining <= 2 ? "text-amber-600" : "text-green-700"}>
+                {remaining}d
+              </span>
+            </div>
           </div>
         </div>
         <DialogFooter>

@@ -412,10 +412,11 @@ router.post("/leave/balances", requireAuth, requireRole("super_admin", "hr_admin
 router.patch("/leave/balances/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const { id } = req.params as { id: string };
-    const { balance, used } = req.body as { balance?: number; used?: number };
+    const { balance, used, carriedForward } = req.body as { balance?: number; used?: number; carriedForward?: number };
     const updateData: Record<string, any> = {};
     if (balance !== undefined) updateData.balance = Number(balance);
     if (used !== undefined) updateData.used = Number(used);
+    if (carriedForward !== undefined) updateData.carriedForward = Number(carriedForward);
     if (Object.keys(updateData).length === 0) {
       res.status(400).json({ error: "Provide balance and/or used to update" }); return;
     }
