@@ -20,11 +20,10 @@ export async function resolveEmployeeId(
   res: Response,
   clientEmployeeId?: string,
 ): Promise<string | null> {
-  if (isPrivileged(req)) {
-    if (!clientEmployeeId) {
-      res.status(400).json({ error: "employeeId is required" });
-      return null;
-    }
+  // Privileged users (hr_admin, super_admin) may pass a clientEmployeeId to act
+  // on behalf of another employee. If they DON'T pass one, fall through and
+  // resolve their own employee record so they can clock in/out for themselves.
+  if (isPrivileged(req) && clientEmployeeId) {
     return clientEmployeeId;
   }
 
