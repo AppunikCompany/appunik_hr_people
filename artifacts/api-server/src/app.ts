@@ -17,8 +17,9 @@ const __dirname = dirname(__filename);
 const app: Express = express();
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// 25 MB limit to support base64-encoded file uploads (PDFs, docs up to ~18 MB raw)
+app.use(express.json({ limit: "25mb" }));
+app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 app.use(cookieParser());
 
 const hasClerkKeys = Boolean(process.env.CLERK_SECRET_KEY && process.env.CLERK_PUBLISHABLE_KEY);

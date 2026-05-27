@@ -141,7 +141,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
     ],
   },
   {
-    label: "Letters",
+    label: "Documents & Letters",
     href: "/letters",
     icon: FileText,
   },
