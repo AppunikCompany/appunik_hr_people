@@ -18,9 +18,14 @@ import { fireAutomationEvent } from "../lib/automations";
 
 const router: IRouter = Router();
 
-// ── Working-hours window: 8:00 AM – 10:00 PM ─────────────────────────────────
+// ── Working-hours window: 8:00 AM – 10:00 PM (IST) ───────────────────────────
+// Railway servers run in UTC — use Intl to get the correct local hour in IST.
+const COMPANY_TIMEZONE = "Asia/Kolkata";
 function isWithinWorkingHours(): boolean {
-  const h = new Date().getHours();
+  const h = parseInt(
+    new Intl.DateTimeFormat("en-US", { timeZone: COMPANY_TIMEZONE, hour: "numeric", hour12: false }).format(new Date()),
+    10,
+  );
   return h >= 8 && h < 22;
 }
 
