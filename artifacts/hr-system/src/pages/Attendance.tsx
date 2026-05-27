@@ -498,21 +498,28 @@ export default function Attendance() {
               {/* ── Regularization Requests ── */}
               {myRegularizations && myRegularizations.length > 0 && (
                 <div className="mt-6">
-                  <h3 className="text-sm font-semibold text-foreground mb-3">Regularization Requests</h3>
+                  <h3 className="text-sm font-semibold text-foreground mb-3">
+                    {user?.role !== "employee" ? "Regularization Requests (All Employees)" : "My Regularization Requests"}
+                  </h3>
                   <div className="bg-white border border-border rounded-lg shadow-sm overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
+                          {user?.role !== "employee" && <th className="text-left px-5 py-3">Employee</th>}
                           <th className="text-left px-5 py-3">Date</th>
-                          <th className="text-left px-5 py-3">Requested Clock In</th>
-                          <th className="text-left px-5 py-3">Requested Clock Out</th>
+                          <th className="text-left px-5 py-3">Req. Clock In</th>
+                          <th className="text-left px-5 py-3">Req. Clock Out</th>
                           <th className="text-left px-5 py-3">Reason</th>
                           <th className="text-left px-5 py-3">Status</th>
+                          {user?.role !== "employee" && <th className="text-left px-5 py-3">Actions</th>}
                         </tr>
                       </thead>
                       <tbody>
                         {myRegularizations.map((r: any) => (
                           <tr key={r.id} className="border-b border-secondary hover:bg-background">
+                            {user?.role !== "employee" && (
+                              <td className="px-5 py-3 font-medium text-foreground">{r.employeeName || "—"}</td>
+                            )}
                             <td className="px-5 py-3 font-medium">{r.date}</td>
                             <td className="px-5 py-3 text-muted-foreground">
                               {r.requestedClockIn ? new Date(r.requestedClockIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
@@ -520,7 +527,7 @@ export default function Attendance() {
                             <td className="px-5 py-3 text-muted-foreground">
                               {r.requestedClockOut ? new Date(r.requestedClockOut).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
                             </td>
-                            <td className="px-5 py-3 text-muted-foreground max-w-[200px] truncate">{r.reason}</td>
+                            <td className="px-5 py-3 text-muted-foreground max-w-[160px] truncate" title={r.reason}>{r.reason}</td>
                             <td className="px-5 py-3">
                               <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
                                 r.status === "approved" ? "bg-green-100 text-green-700" :
@@ -530,6 +537,32 @@ export default function Attendance() {
                                 {r.status === "approved" ? "Approved" : r.status === "rejected" ? "Rejected" : "Pending"}
                               </span>
                             </td>
+                            {user?.role !== "employee" && (
+                              <td className="px-5 py-3">
+                                {r.status === "pending" ? (
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      size="sm"
+                                      className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
+                                      disabled={approveMut.isPending}
+                                      onClick={() => approveMut.mutate({ id: r.id, status: "approved" })}
+                                    >
+                                      Approve
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-xs border-red-300 text-red-600 hover:bg-red-50"
+                                      onClick={() => setRejectDialog({ open: true, id: r.id, note: "" })}
+                                    >
+                                      Reject
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">{r.reviewNote ? `"${r.reviewNote}"` : "—"}</span>
+                                )}
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
