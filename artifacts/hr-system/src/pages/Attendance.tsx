@@ -141,9 +141,9 @@ export default function Attendance() {
   });
 
   const { data: myAttendance, isLoading: myLoading } = useQuery({
-    queryKey: ["my-attendance", user?.id, month, year],
-    queryFn: () => fetchApi<any>(`/self-service/attendance/${user?.id}?month=${month}&year=${year}`),
-    enabled: !!user?.id,
+    queryKey: ["my-attendance", user?.employeeId, month, year],
+    queryFn: () => fetchApi<any>(`/self-service/attendance/${user?.employeeId}?month=${month}&year=${year}`),
+    enabled: !!user?.employeeId,
   });
 
   const { data: myRegularizations } = useQuery({

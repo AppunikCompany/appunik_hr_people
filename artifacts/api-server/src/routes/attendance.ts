@@ -176,13 +176,8 @@ router.post("/attendance/wfh", requireAuth, async (req, res): Promise<void> => {
 router.get("/attendance/today", requireAuth, async (req, res): Promise<void> => {
   try {
     const clientId = req.query.employeeId as string | undefined;
-    let employeeId: string | null = null;
-    if (isPrivileged(req)) {
-      employeeId = clientId ?? "";
-    } else {
-      employeeId = await resolveEmployeeId(req, res, clientId);
-      if (!employeeId) return;
-    }
+    const employeeId = await resolveEmployeeId(req, res, clientId);
+    if (!employeeId) return;
     const today = new Date().toISOString().split("T")[0];
     const [record] = await db
       .select()
