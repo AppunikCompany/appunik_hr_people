@@ -186,6 +186,13 @@ export interface AttendanceRecord {
   currentBreakStart?: string | null;
   totalBreakMinutes?: number;
   breakCount?: number;
+  // Full break intervals — present on today + self-service responses
+  breaks?: Array<{
+    id: string;
+    breakStart: string | null;
+    breakEnd: string | null;
+    durationMinutes: number | null;
+  }>;
 }
 
 export interface Holiday {

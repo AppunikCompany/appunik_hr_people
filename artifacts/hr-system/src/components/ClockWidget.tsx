@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { fetchApi, type AttendanceRecord } from "@/hooks/useApi";
 import { Button } from "@/components/ui/button";
-import { LogIn, LogOut, Home, Clock, Coffee, RotateCcw, MoonStar } from "lucide-react";
+import { LogIn, LogOut, Home, Clock, Coffee, RotateCcw, MoonStar, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
 
 // Working-hours window: 8:00 AM – 10:00 PM
@@ -45,6 +45,56 @@ function useElapsed(fromIso: string | null | undefined): number {
     return () => clearInterval(id);
   }, [fromIso]);
   return seconds;
+}
+
+// ── Break History ────────────────────────────────────────────────────────────
+
+function BreakHistory({ breaks, isOnBreak, currentBreakStart }: {
+  breaks?: AttendanceRecord["breaks"];
+  isOnBreak?: boolean;
+  currentBreakStart?: string | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const completed = (breaks ?? []).filter((b) => b.breakEnd);
+  const total = completed.length + (isOnBreak ? 1 : 0);
+  if (total === 0) return null;
+
+  return (
+    <div className="mt-3 border-t border-border pt-2">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+        {total} away period{total !== 1 ? "s" : ""} today
+      </button>
+      {open && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          {(breaks ?? []).map((b, i) => (
+            <div key={b.id} className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <Coffee className="w-3 h-3 text-amber-500" />
+                <span className="font-mono">{time(b.breakStart ?? "")}</span>
+                <span>→</span>
+                <span className="font-mono">{b.breakEnd ? time(b.breakEnd) : <span className="text-amber-500 italic">ongoing</span>}</span>
+              </div>
+              {b.durationMinutes != null && (
+                <span className="text-amber-600 font-medium">{formatMinutes(b.durationMinutes)}</span>
+              )}
+            </div>
+          ))}
+          {isOnBreak && !breaks?.find((b) => !b.breakEnd) && currentBreakStart && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-600">
+              <Coffee className="w-3 h-3" />
+              <span className="font-mono">{time(currentBreakStart)}</span>
+              <span>→</span>
+              <span className="italic">ongoing…</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -211,6 +261,7 @@ export function ClockWidget({ record, compact = false }: Props) {
             I'm Back
           </Button>
         )}
+        <BreakHistory breaks={record.breaks} isOnBreak={record.isOnBreak} currentBreakStart={record.currentBreakStart} />
       </div>
     );
   }
@@ -257,6 +308,7 @@ export function ClockWidget({ record, compact = false }: Props) {
             </Button>
           </div>
         )}
+        <BreakHistory breaks={record.breaks} isOnBreak={record.isOnBreak} currentBreakStart={record.currentBreakStart} />
       </div>
     );
   }
@@ -279,6 +331,7 @@ export function ClockWidget({ record, compact = false }: Props) {
           {record.isHalfDay ? " · Half day" : ""}
           {record.totalBreakMinutes ? ` · Away: ${formatMinutes(record.totalBreakMinutes)}` : ""}
         </p>
+        <BreakHistory breaks={record.breaks} isOnBreak={false} />
       </div>
     );
   }

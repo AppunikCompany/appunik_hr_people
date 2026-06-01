@@ -203,6 +203,14 @@ router.get("/attendance/today", requireAuth, async (req, res): Promise<void> => 
       currentBreakStart: openBreak?.breakStart?.toISOString() ?? null,
       totalBreakMinutes,
       breakCount: breaks.length,
+      breaks: breaks
+        .sort((a, b) => new Date(a.breakStart).getTime() - new Date(b.breakStart).getTime())
+        .map((b) => ({
+          id: b.id,
+          breakStart: b.breakStart?.toISOString() ?? null,
+          breakEnd: b.breakEnd?.toISOString() ?? null,
+          durationMinutes: b.durationMinutes ?? null,
+        })),
     });
   } catch (e) {
     res.status(500).json({ error: String(e) });

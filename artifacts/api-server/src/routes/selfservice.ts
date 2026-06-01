@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import {
   employeesTable,
   attendanceRecordsTable,
+  attendanceBreaksTable,
   leaveRequestsTable,
   leaveBalancesTable,
   leaveTypesTable,
@@ -58,8 +59,35 @@ router.get("/self-service/attendance/:employeeId", requireAuth, async (req: Requ
     const lateDays = filtered.filter((r) => r.isLate).length;
     const totalHours = filtered.reduce((s, r) => s + (r.hoursWorked ?? 0), 0);
 
+    // Fetch all breaks for these records in one query
+    const recordIds = filtered.map((r) => r.id);
+    const allBreaks = recordIds.length
+      ? await db.select().from(attendanceBreaksTable)
+          .where(eq(attendanceBreaksTable.employeeId, empId))
+      : [];
+    const breaksByRecord = new Map<string, typeof allBreaks>();
+    for (const b of allBreaks) {
+      if (!breaksByRecord.has(b.attendanceRecordId)) breaksByRecord.set(b.attendanceRecordId, []);
+      breaksByRecord.get(b.attendanceRecordId)!.push(b);
+    }
+
+    const enriched = filtered
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      .slice(0, 60)
+      .map((r) => {
+        const breaks = (breaksByRecord.get(r.id) ?? [])
+          .sort((a, b) => new Date(a.breakStart).getTime() - new Date(b.breakStart).getTime())
+          .map((b) => ({
+            id: b.id,
+            breakStart: b.breakStart?.toISOString() ?? null,
+            breakEnd: b.breakEnd?.toISOString() ?? null,
+            durationMinutes: b.durationMinutes ?? null,
+          }));
+        return { ...r, breaks };
+      });
+
     res.json({
-      records: filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 30),
+      records: enriched,
       summary: { presentDays, wfhDays, halfDays, lateDays, totalHours: Math.round(totalHours * 10) / 10 },
     });
   } catch (e) {

@@ -13,8 +13,99 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { formatDate } from "@/lib/utils";
-import { Search, Plus, AlertCircle } from "lucide-react";
+import { Search, Plus, AlertCircle, ChevronDown, ChevronRight, LogIn, LogOut, Coffee, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
+
+// ── Day timeline helpers ──────────────────────────────────────────────────────
+function fmtTime(iso: string | null | undefined) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+}
+function fmtDur(minutes: number | null | undefined) {
+  if (!minutes) return "";
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function DayTimeline({ record }: { record: any }) {
+  const breaks: any[] = record.breaks ?? [];
+  const events: { time: string; label: string; icon: React.ReactNode; color: string }[] = [];
+
+  if (record.clockIn) {
+    events.push({ time: fmtTime(record.clockIn), label: "Clocked In", icon: <LogIn className="w-3 h-3" />, color: "text-green-600 bg-green-50 border-green-200" });
+  }
+  for (const b of breaks) {
+    if (b.breakStart) {
+      events.push({ time: fmtTime(b.breakStart), label: "Went Away" + (b.durationMinutes ? ` · ${fmtDur(b.durationMinutes)}` : ""), icon: <Coffee className="w-3 h-3" />, color: "text-amber-600 bg-amber-50 border-amber-200" });
+    }
+    if (b.breakEnd) {
+      events.push({ time: fmtTime(b.breakEnd), label: "Came Back", icon: <RotateCcw className="w-3 h-3" />, color: "text-blue-600 bg-blue-50 border-blue-200" });
+    }
+  }
+  if (record.clockOut) {
+    events.push({ time: fmtTime(record.clockOut), label: "Clocked Out", icon: <LogOut className="w-3 h-3" />, color: "text-red-500 bg-red-50 border-red-200" });
+  }
+
+  if (events.length === 0) return <p className="text-xs text-muted-foreground py-2">No detailed timeline available.</p>;
+
+  return (
+    <div className="flex flex-col gap-1.5 py-2 pl-2">
+      {events.map((e, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="text-xs font-mono text-muted-foreground w-14 shrink-0">{e.time}</span>
+          <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border font-medium ${e.color}`}>
+            {e.icon}{e.label}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AttendanceRow({ r, onRegularize }: { r: any; onRegularize: (date: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const hasBreaks = r.type === "wfo" && r.clockIn;
+  return (
+    <>
+      <tr className="border-b border-secondary hover:bg-background cursor-pointer" onClick={() => hasBreaks && setExpanded(!expanded)}>
+        <td className="px-4 py-3 font-medium">
+          <div className="flex items-center gap-1.5">
+            {hasBreaks
+              ? (expanded ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" /> : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />)
+              : <span className="w-3.5" />}
+            {r.date}
+          </div>
+        </td>
+        <td className="px-4 py-3"><StatusBadge status={r.type} /></td>
+        <td className="px-4 py-3 text-muted-foreground text-sm">{fmtTime(r.clockIn)}</td>
+        <td className="px-4 py-3 text-muted-foreground text-sm">{fmtTime(r.clockOut)}</td>
+        <td className="px-4 py-3 text-muted-foreground text-sm">{r.hoursWorked?.toFixed(1) ?? "—"}</td>
+        <td className="px-4 py-3 text-sm">
+          {(r.breaks?.length ?? 0) > 0
+            ? <span className="text-xs text-amber-600 font-medium">{r.breaks.length}× away</span>
+            : <span className="text-muted-foreground text-xs">—</span>}
+        </td>
+        <td className="px-4 py-3">
+          {r.isLate ? <span className="text-xs text-red-500 font-medium">Late</span> : <span className="text-muted-foreground text-xs">—</span>}
+        </td>
+        <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+          <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={() => onRegularize(r.date)}>
+            Regularize
+          </Button>
+        </td>
+      </tr>
+      {expanded && hasBreaks && (
+        <tr className="bg-secondary/30 border-b border-secondary">
+          <td colSpan={8} className="px-8 py-1">
+            <DayTimeline record={r} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
 
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const YEARS = [2024, 2025, 2026];
@@ -460,39 +551,29 @@ export default function Attendance() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
-                      <th className="text-left px-5 py-3">Date</th>
-                      <th className="text-left px-5 py-3">Type</th>
-                      <th className="text-left px-5 py-3">Clock In</th>
-                      <th className="text-left px-5 py-3">Clock Out</th>
-                      <th className="text-left px-5 py-3">Hours</th>
-                      <th className="text-left px-5 py-3">Late</th>
-                      <th className="text-left px-5 py-3">Action</th>
+                      <th className="text-left px-4 py-3">Date</th>
+                      <th className="text-left px-4 py-3">Type</th>
+                      <th className="text-left px-4 py-3">Clock In</th>
+                      <th className="text-left px-4 py-3">Clock Out</th>
+                      <th className="text-left px-4 py-3">Hours</th>
+                      <th className="text-left px-4 py-3">Away</th>
+                      <th className="text-left px-4 py-3">Late</th>
+                      <th className="text-left px-4 py-3">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {myLoading ? (
-                      <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
+                      <tr><td colSpan={8} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
                     ) : (myAttendance?.records ?? []).length === 0 ? (
-                      <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">No attendance records for this month</td></tr>
+                      <tr><td colSpan={8} className="text-center py-10 text-muted-foreground">No attendance records for this month</td></tr>
                     ) : (myAttendance?.records ?? []).map((r: any) => (
-                      <tr key={r.id} className="border-b border-secondary hover:bg-background">
-                        <td className="px-5 py-3 font-medium">{r.date}</td>
-                        <td className="px-5 py-3"><StatusBadge status={r.type} /></td>
-                        <td className="px-5 py-3 text-muted-foreground">{r.clockIn ? new Date(r.clockIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
-                        <td className="px-5 py-3 text-muted-foreground">{r.clockOut ? new Date(r.clockOut).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
-                        <td className="px-5 py-3 text-muted-foreground">{r.hoursWorked?.toFixed(1) ?? "—"}</td>
-                        <td className="px-5 py-3">
-                          {r.isLate ? <span className="text-xs text-red-500 font-medium">Late</span> : <span className="text-muted-foreground text-xs">—</span>}
-                        </td>
-                        <td className="px-5 py-3">
-                          <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground hover:text-foreground" onClick={() => { setRegularizationDate(r.date); setRegularizationOpen(true); }}>
-                            Regularize
-                          </Button>
-                        </td>
-                      </tr>
+                      <AttendanceRow key={r.id} r={r} onRegularize={(date) => { setRegularizationDate(date); setRegularizationOpen(true); }} />
                     ))}
                   </tbody>
                 </table>
+                <p className="text-[11px] text-muted-foreground px-4 py-2 border-t border-secondary">
+                  Click a WFO row to expand the full day timeline.
+                </p>
               </div>
 
               {/* ── Regularization Requests ── */}
