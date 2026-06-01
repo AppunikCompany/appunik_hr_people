@@ -4,10 +4,12 @@ import {
   assetsTable,
   assetCategoriesTable,
   assetAssignmentsTable,
+  employeeEquipmentTable,
   employeesTable,
 } from "@workspace/db";
 import { eq, and, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
+import { isPrivileged } from "../lib/ownership";
 import { fireAutomationEvent } from "../lib/automations";
 import { importLogsTable } from "@workspace/db";
 
@@ -306,6 +308,115 @@ router.post("/assets/import", requireAuth, requireRole("super_admin", "hr_admin"
     });
 
     res.json({ created, errors, results });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EMPLOYEE EQUIPMENT (self-declared workstation items)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const EQUIPMENT_TYPES = [
+  "laptop", "desktop", "cpu", "monitor", "mouse", "keyboard",
+  "headset", "webcam", "printer", "tablet", "phone", "other",
+];
+
+/** List equipment for an employee.
+ *  - Privileged (HR/admin): can view any employee by :employeeId
+ *  - Employee: can only view their own (resolved from auth)
+ */
+router.get("/employees/:employeeId/equipment", requireAuth, async (req, res) => {
+  try {
+    const targetId = req.params.employeeId as string;
+
+    // Non-privileged employees can only read their own
+    if (!isPrivileged(req)) {
+      const [self] = await db.select({ id: employeesTable.id })
+        .from(employeesTable).where(eq(employeesTable.userId, req.user!.id));
+      if (!self || self.id !== targetId) {
+        res.status(403).json({ error: "Access denied" }); return;
+      }
+    }
+
+    const items = await db.select()
+      .from(employeeEquipmentTable)
+      .where(eq(employeeEquipmentTable.employeeId, targetId))
+      .orderBy(employeeEquipmentTable.createdAt);
+
+    res.json(items);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/** Add an equipment item.
+ *  - Employee: can only add to their own profile
+ *  - HR/admin: can add to any employee
+ */
+router.post("/employees/:employeeId/equipment", requireAuth, async (req, res) => {
+  try {
+    const targetId = req.params.employeeId as string;
+
+    // Non-privileged employees can only write their own
+    if (!isPrivileged(req)) {
+      const [self] = await db.select({ id: employeesTable.id })
+        .from(employeesTable).where(eq(employeesTable.userId, req.user!.id));
+      if (!self || self.id !== targetId) {
+        res.status(403).json({ error: "Access denied" }); return;
+      }
+    }
+
+    const { equipmentType, customDescription, notes } = req.body as {
+      equipmentType?: string; customDescription?: string; notes?: string;
+    };
+
+    if (!equipmentType || !EQUIPMENT_TYPES.includes(equipmentType)) {
+      res.status(400).json({ error: "Invalid equipment type" }); return;
+    }
+    if (equipmentType === "other" && !customDescription?.trim()) {
+      res.status(400).json({ error: "Description is required for 'Other' equipment" }); return;
+    }
+
+    // Verify employee exists
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, targetId));
+    if (!emp) { res.status(404).json({ error: "Employee not found" }); return; }
+
+    const id = crypto.randomUUID();
+    await db.insert(employeeEquipmentTable).values({
+      id, employeeId: targetId, equipmentType,
+      customDescription: customDescription?.trim() || null,
+      notes: notes?.trim() || null,
+    });
+
+    const [created] = await db.select().from(employeeEquipmentTable)
+      .where(eq(employeeEquipmentTable.id, id));
+    res.status(201).json(created);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+/** Delete an equipment item.
+ *  - Employee: can only delete their own items
+ *  - HR/admin: can delete any
+ */
+router.delete("/employees/:employeeId/equipment/:itemId", requireAuth, async (req, res) => {
+  try {
+    const { employeeId: targetId, itemId } = req.params as { employeeId: string; itemId: string };
+
+    if (!isPrivileged(req)) {
+      const [self] = await db.select({ id: employeesTable.id })
+        .from(employeesTable).where(eq(employeesTable.userId, req.user!.id));
+      if (!self || self.id !== targetId) {
+        res.status(403).json({ error: "Access denied" }); return;
+      }
+    }
+
+    await db.delete(employeeEquipmentTable)
+      .where(and(eq(employeeEquipmentTable.id, itemId), eq(employeeEquipmentTable.employeeId, targetId)));
+
+    res.status(204).send();
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

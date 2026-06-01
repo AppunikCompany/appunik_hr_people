@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchApi, useEmployees } from "@/hooks/useApi";
 import { formatDate } from "@/lib/utils";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
@@ -8,7 +8,31 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Download } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Download, Trash2, Plus, Monitor } from "lucide-react";
+import { toast } from "sonner";
+
+const EQUIPMENT_TYPES = [
+  { value: "laptop",   label: "Laptop" },
+  { value: "desktop",  label: "Desktop" },
+  { value: "cpu",      label: "CPU / Tower" },
+  { value: "monitor",  label: "Monitor" },
+  { value: "mouse",    label: "Mouse" },
+  { value: "keyboard", label: "Keyboard" },
+  { value: "headset",  label: "Headset" },
+  { value: "webcam",   label: "Webcam" },
+  { value: "printer",  label: "Printer" },
+  { value: "tablet",   label: "Tablet" },
+  { value: "phone",    label: "Phone" },
+  { value: "other",    label: "Other" },
+];
+
+const EQ_ICONS: Record<string, string> = {
+  laptop: "💻", desktop: "🖥️", cpu: "🖥️", monitor: "🖥️",
+  mouse: "🖱️", keyboard: "⌨️", headset: "🎧", webcam: "📷",
+  printer: "🖨️", tablet: "📱", phone: "📱", other: "📦",
+};
 
 function formatEnum(val: string | null | undefined): string {
   if (!val) return "—";
@@ -49,6 +73,33 @@ export default function SelfService() {
     queryKey: ["self-assets", selectedEmployee],
     queryFn: () => fetchApi<Array<{ assetName: string; assetCode: string; category: string; assignedAt: string }>>(`/self-service/assets/${selectedEmployee}`),
     enabled: !!selectedEmployee,
+  });
+
+  // Equipment self-declaration
+  const qc = useQueryClient();
+  const { data: equipment = [] } = useQuery({
+    queryKey: ["employee-equipment", selectedEmployee],
+    queryFn: () => fetchApi<Array<{ id: string; equipmentType: string; customDescription: string | null; notes: string | null }>>(`/employees/${selectedEmployee}/equipment`),
+    enabled: !!selectedEmployee,
+  });
+  const [eqType, setEqType] = useState("");
+  const [eqDesc, setEqDesc] = useState("");
+  const addEqMut = useMutation({
+    mutationFn: () => fetchApi(`/employees/${selectedEmployee}/equipment`, {
+      method: "POST",
+      body: JSON.stringify({ equipmentType: eqType, customDescription: eqDesc || undefined }),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee-equipment", selectedEmployee] });
+      setEqType(""); setEqDesc("");
+      toast.success("Equipment added");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const delEqMut = useMutation({
+    mutationFn: (itemId: string) => fetchApi(`/employees/${selectedEmployee}/equipment/${itemId}`, { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-equipment", selectedEmployee] }); toast.success("Removed"); },
+    onError: (e: any) => toast.error(e.message),
   });
 
   const { data: profile } = useQuery({
@@ -110,6 +161,7 @@ export default function SelfService() {
             <TabsTrigger value="attendance">Attendance</TabsTrigger>
             <TabsTrigger value="leave">Leave</TabsTrigger>
             <TabsTrigger value="assets">My Assets</TabsTrigger>
+            <TabsTrigger value="equipment">Equipment</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview">
@@ -343,6 +395,84 @@ export default function SelfService() {
                   )}
                 </tbody>
               </table>
+            </div>
+          </TabsContent>
+
+          {/* ── Equipment ─────────────────────────────────────────── */}
+          <TabsContent value="equipment">
+            <div className="space-y-5">
+              {/* Add form */}
+              <div className="bg-white border border-border rounded-lg p-5 shadow-sm">
+                <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+                  <Monitor className="w-4 h-4" /> Declare Equipment
+                </h3>
+                <div className="flex flex-wrap gap-3 items-end">
+                  <div className="flex-1 min-w-[180px]">
+                    <Label className="text-xs mb-1 block">Type *</Label>
+                    <Select value={eqType} onValueChange={(v) => { setEqType(v); if (v !== "other") setEqDesc(""); }}>
+                      <SelectTrigger><SelectValue placeholder="Select equipment…" /></SelectTrigger>
+                      <SelectContent>
+                        {EQUIPMENT_TYPES.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex-1 min-w-[180px]">
+                    <Label className="text-xs mb-1 block">{eqType === "other" ? "Description *" : "Additional details (optional)"}</Label>
+                    <Input
+                      placeholder={eqType === "other" ? "e.g. Standing desk, custom peripheral…" : "e.g. MacBook Pro M3, Logitech MX Keys…"}
+                      value={eqDesc}
+                      onChange={(e) => setEqDesc(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    onClick={() => addEqMut.mutate()}
+                    disabled={!eqType || addEqMut.isPending}
+                    size="sm"
+                    className="shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-1.5" /> Add
+                  </Button>
+                </div>
+              </div>
+
+              {/* Current equipment list */}
+              <div className="bg-white border border-border rounded-lg shadow-sm overflow-hidden">
+                <div className="px-5 py-4 border-b border-border">
+                  <h3 className="text-sm font-semibold text-foreground">Current Equipment ({equipment.length})</h3>
+                </div>
+                {equipment.length === 0 ? (
+                  <p className="text-center py-12 text-sm text-muted-foreground">No equipment declared yet.</p>
+                ) : (
+                  <div className="divide-y divide-secondary">
+                    {equipment.map((item) => {
+                      const typeLabel = EQUIPMENT_TYPES.find((t) => t.value === item.equipmentType)?.label ?? item.equipmentType;
+                      return (
+                        <div key={item.id} className="flex items-center justify-between px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <span className="text-xl">{EQ_ICONS[item.equipmentType] ?? "📦"}</span>
+                            <div>
+                              <p className="text-sm font-medium text-foreground">{typeLabel}</p>
+                              {item.customDescription && (
+                                <p className="text-xs text-muted-foreground">{item.customDescription}</p>
+                              )}
+                            </div>
+                          </div>
+                          <Button
+                            size="sm" variant="ghost"
+                            className="text-red-400 hover:text-red-600 hover:bg-red-50 h-7 w-7 p-0"
+                            onClick={() => delEqMut.mutate(item.id)}
+                            disabled={delEqMut.isPending}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </TabsContent>
         </Tabs>

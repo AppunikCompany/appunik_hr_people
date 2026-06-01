@@ -10,8 +10,19 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDate } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit2, Trash2, Plus } from "lucide-react";
+import { Edit2, Trash2, Plus, Monitor } from "lucide-react";
 import { toast } from "sonner";
+
+const EQUIPMENT_TYPES: Record<string, string> = {
+  laptop: "Laptop", desktop: "Desktop", cpu: "CPU / Tower", monitor: "Monitor",
+  mouse: "Mouse", keyboard: "Keyboard", headset: "Headset", webcam: "Webcam",
+  printer: "Printer", tablet: "Tablet", phone: "Phone", other: "Other",
+};
+const EQ_ICONS: Record<string, string> = {
+  laptop: "💻", desktop: "🖥️", cpu: "🖥️", monitor: "🖥️",
+  mouse: "🖱️", keyboard: "⌨️", headset: "🎧", webcam: "📷",
+  printer: "🖨️", tablet: "📱", phone: "📱", other: "📦",
+};
 
 export default function EmployeeDetail() {
   const [, params] = useRoute("/employees/:id");
@@ -25,6 +36,11 @@ export default function EmployeeDetail() {
   const { data: history } = useQuery({
     queryKey: ["employee-history", id],
     queryFn: () => fetchApi<any[]>(`/employees/${id}/history`),
+    enabled: !!id,
+  });
+  const { data: equipment = [] } = useQuery({
+    queryKey: ["employee-equipment", id],
+    queryFn: () => fetchApi<Array<{ id: string; equipmentType: string; customDescription: string | null }>>(`/employees/${id}/equipment`),
     enabled: !!id,
   });
 
@@ -85,6 +101,7 @@ export default function EmployeeDetail() {
           <TabsTrigger value="profile">Profile</TabsTrigger>
           <TabsTrigger value="employment">Employment</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
+          <TabsTrigger value="equipment">Equipment</TabsTrigger>
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
 
@@ -148,6 +165,37 @@ export default function EmployeeDetail() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </TabsContent>
+
+        {/* ── Equipment ────────────────────────────────────────────────────── */}
+        <TabsContent value="equipment">
+          <div className="bg-white border border-border rounded-lg shadow-sm overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <Monitor className="w-4 h-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold text-foreground">Declared Equipment ({equipment.length})</h3>
+            </div>
+            {equipment.length === 0 ? (
+              <p className="text-center py-12 text-sm text-muted-foreground">
+                This employee hasn't declared any equipment yet.
+              </p>
+            ) : (
+              <div className="divide-y divide-secondary">
+                {equipment.map((item) => (
+                  <div key={item.id} className="flex items-center gap-4 px-5 py-3">
+                    <span className="text-xl">{EQ_ICONS[item.equipmentType] ?? "📦"}</span>
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {EQUIPMENT_TYPES[item.equipmentType] ?? item.equipmentType}
+                      </p>
+                      {item.customDescription && (
+                        <p className="text-xs text-muted-foreground">{item.customDescription}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </TabsContent>
 

@@ -43,3 +43,19 @@ export const assetAssignmentsTable = mysqlTable("people_asset_assignments", {
 });
 
 export type AssetAssignment = typeof assetAssignmentsTable.$inferSelect;
+
+// ── Employee Equipment (self-declared) ────────────────────────────────────────
+// Employees declare what equipment they personally use at their workstation.
+// Types: laptop | desktop | cpu | monitor | mouse | keyboard | headset |
+//        webcam | printer | tablet | phone | other
+export const employeeEquipmentTable = mysqlTable("people_employee_equipment", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  employeeId: varchar("employee_id", { length: 36 }).notNull().references(() => employeesTable.id, { onDelete: "cascade" }),
+  equipmentType: varchar("equipment_type", { length: 50 }).notNull(),
+  // freetext label — always shown; required when type = "other"
+  customDescription: varchar("custom_description", { length: 255 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type EmployeeEquipment = typeof employeeEquipmentTable.$inferSelect;
