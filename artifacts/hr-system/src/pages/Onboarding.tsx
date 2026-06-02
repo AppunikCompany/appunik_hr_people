@@ -27,6 +27,12 @@ function CreateChecklistDialog({ open, onClose }: { open: boolean; onClose: () =
   const [empId, setEmpId] = useState("");
   const { data: employees } = useEmployees({ status: "active" });
   const qc = useQueryClient();
+
+  // Reset selection every time the dialog opens so no stale value is shown
+  useEffect(() => {
+    if (open) setEmpId("");
+  }, [open]);
+
   const mutation = useMutation({
     mutationFn: () => fetchApi("/onboarding/checklists", {
       method: "POST",
@@ -44,7 +50,7 @@ function CreateChecklistDialog({ open, onClose }: { open: boolean; onClose: () =
           <Label>Employee *</Label>
           <Select value={empId} onValueChange={setEmpId}>
             <SelectTrigger className="mt-1"><SelectValue placeholder="Select employee..." /></SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-60 overflow-y-auto">
               {employees?.map((e: any) => <SelectItem key={e.id} value={e.id}>{e.firstName} {e.lastName}</SelectItem>)}
             </SelectContent>
           </Select>
