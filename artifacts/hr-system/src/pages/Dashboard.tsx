@@ -74,7 +74,8 @@ function EmployeeDashboard({ user, greeting, today }: { user: any; greeting: str
     .slice(0, 3);
 
   // Total available leave days across all types
-  const totalAvailable = (myBalances as any[] ?? []).reduce((sum: number, b: any) => sum + Math.max(0, b.balance - b.used), 0);
+  // `balance` = remaining available (approval logic already decrements it); `used` tracks days taken separately
+  const totalAvailable = (myBalances as any[] ?? []).reduce((sum: number, b: any) => sum + Math.max(0, b.balance), 0);
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
@@ -116,8 +117,10 @@ function EmployeeDashboard({ user, greeting, today }: { user: any; greeting: str
           <div className="divide-y divide-border max-h-[260px] overflow-y-auto">
             {myBalances && (myBalances as any[]).length > 0 ? (
               (myBalances as any[]).map((b: any) => {
-                const available = Math.max(0, b.balance - b.used);
-                const pct = b.balance > 0 ? Math.round((available / b.balance) * 100) : 0;
+                // `balance` is already the remaining available (approval decrements it)
+                const allocated = b.balance + b.used;
+                const available = Math.max(0, b.balance);
+                const pct = allocated > 0 ? Math.round((available / allocated) * 100) : 0;
                 return (
                   <div key={b.id} className="flex items-center gap-3 px-5 py-3">
                     <div className="flex-1 min-w-0">

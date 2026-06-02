@@ -107,7 +107,7 @@ router.get("/self-service/leave-summary/:employeeId", requireAuth, async (req: R
       .from(leaveBalancesTable)
       .where(and(eq(leaveBalancesTable.employeeId, empId), eq(leaveBalancesTable.year, year)));
 
-    const leaveTypes = await db.select().from(leaveTypesTable);
+    const leaveTypes = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.isActive, true));
     const ltMap = new Map(leaveTypes.map((lt) => [lt.id, lt]));
 
     const allRequests = await db
@@ -123,16 +123,21 @@ router.get("/self-service/leave-summary/:employeeId", requireAuth, async (req: R
       }
     }
 
-    const enrichedBalances = balances.map((b) => {
-      const pending = pendingByType.get(b.leaveTypeId) ?? 0;
-      return {
-        ...b,
-        allocated: b.balance,
-        pending,
-        leaveTypeName: ltMap.get(b.leaveTypeId)?.name ?? "Unknown",
-        available: Math.max(0, b.balance - b.used - pending),
-      };
-    });
+    const enrichedBalances = balances
+      // Exclude balances for leave types that have been deactivated/deleted
+      .filter((b) => ltMap.has(b.leaveTypeId))
+      .map((b) => {
+        const pending = pendingByType.get(b.leaveTypeId) ?? 0;
+        // balance = remaining available (approval logic already decrements it)
+        // allocated = balance + used; available = balance minus any still-pending requests
+        return {
+          ...b,
+          allocated: b.balance + b.used,
+          pending,
+          leaveTypeName: ltMap.get(b.leaveTypeId)?.name ?? "Unknown",
+          available: Math.max(0, b.balance - pending),
+        };
+      });
 
     const recentRequests = allRequests.slice(0, 10).map((r) => ({
       ...r,

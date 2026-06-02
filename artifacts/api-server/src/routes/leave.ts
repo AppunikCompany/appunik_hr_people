@@ -141,6 +141,8 @@ router.get("/leave/balances", requireAuth, async (req, res) => {
       .filter((b) => b.balance.year === year)
       // Hide balances for deactivated / deleted employees
       .filter((b) => b.emp?.status && (ACTIVE_STATUSES as readonly string[]).includes(b.emp.status))
+      // Hide balances for leave types that have been deleted or deactivated from the policy
+      .filter((b) => b.leaveType !== null && b.leaveType.isActive === true)
       .map((b) => ({
         id: b.balance.id,
         employeeId: b.balance.employeeId,
@@ -215,7 +217,7 @@ router.post("/leave/balances/allocate-bulk", requireAuth, requireRole("super_adm
 
 // ── Year-end carry-forward ────────────────────────────────────────────────────
 // For every active employee × every leave type that has isCarryForward=true:
-//   remaining = balance - used  (of fromYear)
+//   remaining = balance  (balance already = remaining since approval decrements it)
 //   carryAmount = min(remaining, maxCarryForward ?? 5)
 // Adds carryAmount to the toYear (fromYear+1) balance, creating the row if needed.
 // Safe to run multiple times — will not double-count (carries only what isn't already
@@ -267,7 +269,7 @@ router.post("/leave/balances/carry-forward", requireAuth, requireRole("super_adm
         const to = toMap.get(key);
 
         // No previous year record → nothing to carry
-        const remaining = from ? Math.max(0, (from.balance ?? 0) - (from.used ?? 0)) : 0;
+        const remaining = from ? Math.max(0, from.balance ?? 0) : 0;
         if (remaining <= 0) continue;
 
         const maxCarry = lt.maxCarryForward ?? 5;
@@ -354,7 +356,7 @@ router.get("/leave/balances/carry-forward/preview", requireAuth, requireRole("su
         const key = `${emp.id}::${lt.id}`;
         const from = fromMap.get(key);
         const to = toMap.get(key);
-        const remaining = from ? Math.max(0, (from.balance ?? 0) - (from.used ?? 0)) : 0;
+        const remaining = from ? Math.max(0, from.balance ?? 0) : 0;
         if (remaining <= 0) continue;
         const maxCarry = lt.maxCarryForward ?? 5;
         const willCarry = Math.min(remaining, maxCarry);
@@ -622,7 +624,8 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
     const year = new Date().getFullYear();
     const [bal] = await db.select().from(leaveBalancesTable)
       .where(and(eq(leaveBalancesTable.employeeId, employeeId), eq(leaveBalancesTable.leaveTypeId, leaveTypeId), eq(leaveBalancesTable.year, year)));
-    const isLop = !!bal && (bal.balance - bal.used) < days;
+    // balance = remaining available (approval logic decrements it); no need to subtract used again
+    const isLop = !!bal && bal.balance < days;
 
     // Determine final status
     // pending_doc takes priority (employee must upload doc), then lop, then pending
