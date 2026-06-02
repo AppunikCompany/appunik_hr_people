@@ -10,6 +10,7 @@ import { resolveUserMiddleware } from "./middlewares/authMiddleware";
 import { seedSystemRoles } from "./lib/seedRoles";
 import { handleAdmsPush } from "./routes/zkteco";
 import { processOverduePendingDocLeaves } from "./routes/leave";
+import { autoClockOutMissed, scheduleDailyIST } from "./routes/attendance";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -37,6 +38,9 @@ seedSystemRoles().catch((err) => console.error("[seed] Failed to seed roles:", e
 // Run once on startup, then every 6 hours — converts overdue pending_doc leaves to LOP
 processOverduePendingDocLeaves();
 setInterval(processOverduePendingDocLeaves, 6 * 60 * 60 * 1000);
+
+// Auto clock-out at 10:00 PM IST — closes any open WFO records with full hours calc
+scheduleDailyIST(22, autoClockOutMissed);
 
 // ZKTeco ADMS push — device sends plain-text punches, no auth header
 // Must be registered BEFORE the auth middleware router

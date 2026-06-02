@@ -625,4 +625,124 @@ router.patch("/attendance/regularization/:id", requireAuth, requireRole("super_a
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTO CLOCK-OUT JOB
+// Finds every WFO record for today (IST) that has a clock-in but no clock-out,
+// closes any open breaks, and sets clockOut = 22:00 IST with full hours calc.
+// Called by app.ts at 10 PM IST every day.
+// ─────────────────────────────────────────────────────────────────────────────
+export async function autoClockOutMissed(): Promise<void> {
+  try {
+    // Today's date in IST (YYYY-MM-DD)
+    const todayIST = new Intl.DateTimeFormat("en-CA", {
+      timeZone: COMPANY_TIMEZONE,
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(new Date());
+
+    // Set clockOut to exactly 22:00:00 IST
+    const autoClockOutIST = (() => {
+      const [y, m, d] = todayIST.split("-").map(Number);
+      // Build 22:00 IST as a UTC Date
+      const ist22 = new Date(`${todayIST}T22:00:00+05:30`);
+      return ist22;
+    })();
+
+    // Find all WFO records for today without a clock-out
+    const openRecords = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(
+        and(
+          eq(attendanceRecordsTable.date, todayIST),
+          eq(attendanceRecordsTable.type, "wfo"),
+          isNull(attendanceRecordsTable.clockOut),
+        ),
+      );
+
+    if (openRecords.length === 0) {
+      console.log(`[auto-clockout] ${todayIST}: no open records — nothing to do`);
+      return;
+    }
+
+    let closed = 0;
+    for (const record of openRecords) {
+      try {
+        // 1. Close any open break at 22:00 IST
+        const [openBreak] = await db
+          .select()
+          .from(attendanceBreaksTable)
+          .where(and(eq(attendanceBreaksTable.attendanceRecordId, record.id), isNull(attendanceBreaksTable.breakEnd)));
+        if (openBreak) {
+          const breakEndTime = autoClockOutIST < new Date(openBreak.breakStart) ? new Date(openBreak.breakStart) : autoClockOutIST;
+          const dur = (breakEndTime.getTime() - new Date(openBreak.breakStart).getTime()) / 60000;
+          await db.update(attendanceBreaksTable)
+            .set({ breakEnd: breakEndTime, durationMinutes: dur })
+            .where(eq(attendanceBreaksTable.id, openBreak.id));
+        }
+
+        // 2. Total break time (including the one just closed)
+        const allBreaks = await db
+          .select()
+          .from(attendanceBreaksTable)
+          .where(eq(attendanceBreaksTable.attendanceRecordId, record.id));
+        const totalBreakMs = allBreaks.reduce((sum, b) => {
+          if (b.durationMinutes != null) return sum + b.durationMinutes * 60000;
+          if (b.breakEnd) return sum + (new Date(b.breakEnd).getTime() - new Date(b.breakStart).getTime());
+          return sum;
+        }, 0);
+
+        // 3. Calculate net hours worked
+        const rawMs = record.clockIn
+          ? autoClockOutIST.getTime() - new Date(record.clockIn).getTime()
+          : 0;
+        const netMs = Math.max(0, rawMs - totalBreakMs);
+        const hoursWorked = netMs / 3600000;
+        const isHalfDay = hoursWorked > 0 && hoursWorked < 4;
+
+        // 4. Save auto-checkout
+        await db.update(attendanceRecordsTable)
+          .set({
+            clockOut: autoClockOutIST,
+            hoursWorked,
+            isHalfDay,
+            notes: (record.notes ? record.notes + " | " : "") + "Auto clocked-out at 10:00 PM",
+          })
+          .where(eq(attendanceRecordsTable.id, record.id));
+
+        closed++;
+      } catch (err) {
+        console.error(`[auto-clockout] Failed for record ${record.id}:`, err);
+      }
+    }
+
+    console.log(`[auto-clockout] ${todayIST}: auto-clocked out ${closed}/${openRecords.length} employees at 22:00 IST`);
+  } catch (err) {
+    console.error("[auto-clockout] Job failed:", err);
+  }
+}
+
+// ── Scheduler helper ─────────────────────────────────────────────────────────
+// Schedules `fn` to run at a specific IST hour daily.
+// Checks every minute whether the target hour has been reached and not yet run.
+export function scheduleDailyIST(hour: number, fn: () => Promise<void>): void {
+  let lastRunDate = "";
+
+  setInterval(() => {
+    const nowIST = new Intl.DateTimeFormat("en-US", {
+      timeZone: COMPANY_TIMEZONE,
+      hour: "numeric",
+      hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(new Date());
+
+    const h = parseInt(nowIST.find((p) => p.type === "hour")?.value ?? "0", 10);
+    const dateStr = `${nowIST.find((p) => p.type === "year")?.value}-${nowIST.find((p) => p.type === "month")?.value}-${nowIST.find((p) => p.type === "day")?.value}`;
+
+    if (h === hour && dateStr !== lastRunDate) {
+      lastRunDate = dateStr;
+      fn().catch((e) => console.error(`[scheduler] Daily IST ${hour}:00 job failed:`, e));
+    }
+  }, 60_000); // check every minute
+}
+
 export default router;
