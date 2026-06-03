@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useLeaveRequests, useLeaveTypes, useEmployees, useLeaveBalances, useCurrentUser, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
@@ -10,9 +10,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { formatDate } from "@/lib/utils";
-import { Plus, Check, X, Calendar, Info, Edit2, Download, Trash2, RotateCcw, Upload, AlertTriangle } from "lucide-react";
+import { Plus, Check, X, Calendar, Info, Edit2, Download, Trash2, RotateCcw, Upload, AlertTriangle, BanknoteIcon } from "lucide-react";
 import { toast } from "sonner";
 
 function isSickLeave(types: any[], leaveTypeId: string): boolean {
@@ -30,9 +31,18 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const isPrivileged = ["super_admin", "hr_admin", "it_admin", "manager"].includes(currentUser?.role ?? "");
 
   const [form, setForm] = useState({ employeeId: "", leaveTypeId: "", startDate: "", endDate: "", reason: "", leaveDuration: "full_day", medicalDocumentUrl: "" });
+  const [lwpAcknowledged, setLwpAcknowledged] = useState(false);
   const { data: employees } = useEmployees({ status: "active" });
   const { data: types } = useLeaveTypes();
   const qc = useQueryClient();
+
+  // Fetch balance for the relevant employee to detect LWP
+  const balanceEmpId = isPrivileged ? form.employeeId : (currentUser?.employeeId ?? "");
+  const { data: balances } = useLeaveBalances(balanceEmpId || undefined);
+  const selectedBalance = (balances as any[] ?? []).find((b: any) => b.leaveTypeId === form.leaveTypeId);
+
+  // Reset acknowledgement whenever leave type or employee changes
+  useEffect(() => { setLwpAcknowledged(false); }, [form.leaveTypeId, form.employeeId]);
 
   const mutation = useMutation({
     mutationFn: (d: any) => fetchApi("/leave/requests", { method: "POST", body: JSON.stringify(d) }),
@@ -55,6 +65,13 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
     return count;
   };
   const estDays = estimateDays();
+
+  // LWP detection: will any part of this request be unpaid?
+  const remaining = selectedBalance?.balance ?? null;
+  const isLwp = remaining !== null && estDays > 0 && remaining < estDays;
+  const lwpDays = isLwp ? Math.max(0, estDays - (remaining ?? 0)) : 0;
+  const isFullyLwp = isLwp && (remaining ?? 0) <= 0;
+
   const isBackdated = sick && form.startDate && form.startDate < todayStr;
   // Advance = sick leave with a future start date — document required upfront, no grace period
   const isAdvance = sick && form.startDate && form.startDate > todayStr;
@@ -182,6 +199,39 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
           )}
 
           <div><Label>Reason</Label><Textarea value={form.reason} onChange={e => set("reason", e.target.value)} className="mt-1" rows={3} /></div>
+
+          {/* ── LWP Warning ───────────────────────────────────────────── */}
+          {isLwp && (
+            <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 space-y-2">
+              <div className="flex items-start gap-2">
+                <BanknoteIcon className="w-4 h-4 mt-0.5 shrink-0 text-red-600" />
+                <div className="text-sm text-red-800">
+                  {isFullyLwp ? (
+                    <>
+                      <strong>No leave balance remaining.</strong> This entire request ({estDays}d) will be
+                      treated as <strong>Leave Without Pay</strong> and will affect your salary.
+                    </>
+                  ) : (
+                    <>
+                      You have <strong>{remaining}d remaining</strong> for this leave type.
+                      <strong> {lwpDays}d</strong> of this request will be treated as{" "}
+                      <strong>Leave Without Pay</strong> and will affect your salary.
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 pt-1">
+                <Checkbox
+                  id="lwp-ack"
+                  checked={lwpAcknowledged}
+                  onCheckedChange={(v) => setLwpAcknowledged(!!v)}
+                />
+                <label htmlFor="lwp-ack" className="text-xs text-red-800 cursor-pointer select-none">
+                  I understand that this leave will be unpaid and will be deducted from my salary.
+                </label>
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
@@ -193,6 +243,7 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
               if (!isHalfDay && !form.endDate) { toast.error("End date is required"); return; }
               if (!isHalfDay && new Date(form.endDate) < new Date(form.startDate)) { toast.error("End date must be after start date"); return; }
               if (isAdvance && !form.medicalDocumentUrl.trim()) { toast.error("A medical document is required for advance sick leave"); return; }
+              if (isLwp && !lwpAcknowledged) { toast.error("Please acknowledge that this leave will be unpaid"); return; }
               const endDate = isHalfDay ? form.startDate : form.endDate;
               mutation.mutate({
                 ...(isPrivileged ? { employeeId: form.employeeId } : {}),
@@ -205,7 +256,7 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
                 medicalDocumentUrl: form.medicalDocumentUrl || undefined,
               });
             }}
-            disabled={mutation.isPending}
+            disabled={mutation.isPending || (isLwp && !lwpAcknowledged)}
           >
             {mutation.isPending ? "Submitting..." : "Submit"}
           </Button>
@@ -602,6 +653,17 @@ function LeaveBalancesTab() {
   const effectiveEmpId = isPrivileged ? selectedEmpId : (currentUser?.employeeId ?? "");
   const { data: balances, isLoading } = useLeaveBalances(effectiveEmpId || undefined);
 
+  // Fetch LWP requests to show per-type LWP days in the balance table
+  const { data: lopRequests } = useLeaveRequests(effectiveEmpId ? { status: "lop", employeeId: effectiveEmpId } : { status: "lop" });
+  const currentYear = new Date().getFullYear();
+  const lopByType = new Map<string, number>();
+  for (const r of (lopRequests as any[] ?? [])) {
+    if (new Date(r.startDate).getFullYear() === currentYear) {
+      lopByType.set(r.leaveTypeId, (lopByType.get(r.leaveTypeId) ?? 0) + (r.days ?? 0));
+    }
+  }
+  const totalLwpDays = Array.from(lopByType.values()).reduce((s, v) => s + v, 0);
+
   const balanceRows = (balances as any[] ?? []);
   const totalAllocated = balanceRows.reduce((s: number, b: any) => s + b.used + b.balance, 0);
   const totalUsed = balanceRows.reduce((s: number, b: any) => s + b.used, 0);
@@ -640,17 +702,18 @@ function LeaveBalancesTab() {
               <th className="text-center px-5 py-3">Allocated</th>
               <th className="text-center px-5 py-3">Used</th>
               <th className="text-center px-5 py-3">Remaining</th>
+              <th className="text-center px-5 py-3 text-red-600">LWP Days</th>
               {isPrivileged && <th className="text-right px-5 py-3">Actions</th>}
             </tr>
           </thead>
           <tbody>
             {isPrivileged && !selectedEmpId ? (
-              <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">Select an employee to view and adjust their leave balances</td></tr>
+              <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">Select an employee to view and adjust their leave balances</td></tr>
             ) : isLoading ? (
-              <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
+              <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
             ) : balanceRows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="text-center py-10 text-muted-foreground">
+                <td colSpan={7} className="text-center py-10 text-muted-foreground">
                   No leave balances found.{isPrivileged && " Go to Settings → Leave Policies and click \"Allocate for " + new Date().getFullYear() + "\" first."}
                 </td>
               </tr>
@@ -659,6 +722,7 @@ function LeaveBalancesTab() {
                 {balanceRows.map((b: any, i: number) => {
                   const allocated = b.used + b.balance;
                   const pct = allocated > 0 ? Math.round((b.balance / allocated) * 100) : 0;
+                  const lwpForType = lopByType.get(b.leaveTypeId) ?? 0;
                   return (
                     <tr key={b.id} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
                       <td className="px-5 py-3 font-medium text-foreground">{b.leaveTypeName}</td>
@@ -679,6 +743,11 @@ function LeaveBalancesTab() {
                           />
                         </div>
                       </td>
+                      <td className="px-5 py-3 text-center">
+                        {lwpForType > 0
+                          ? <span className="font-semibold text-red-600">{lwpForType}</span>
+                          : <span className="text-muted-foreground text-xs">—</span>}
+                      </td>
                       {isPrivileged && (
                         <td className="px-5 py-3 text-right">
                           <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setAdjustBalance(b)}>
@@ -695,6 +764,7 @@ function LeaveBalancesTab() {
                   <td className="px-5 py-3 text-center">{totalAllocated}</td>
                   <td className="px-5 py-3 text-center text-muted-foreground">{totalUsed}</td>
                   <td className="px-5 py-3 text-center text-green-700">{totalRemaining}</td>
+                  <td className="px-5 py-3 text-center text-red-600">{totalLwpDays > 0 ? totalLwpDays : "—"}</td>
                   {isPrivileged && <td />}
                 </tr>
               </>
@@ -938,6 +1008,142 @@ function HolidaysTab() {
 }
 
 // ─── Reports Tab ───────────────────────────────────────────────────────────────
+// ─── LWP Tab ──────────────────────────────────────────────────────────────────
+function LwpTab() {
+  const now = new Date();
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(0); // 0 = all months
+  const { data: currentUser } = useCurrentUser();
+  const isPrivileged = ["super_admin", "hr_admin", "it_admin", "manager"].includes(currentUser?.role ?? "");
+
+  const { data: allRequests, isLoading } = useLeaveRequests({ status: "lop" });
+
+  const filtered = (allRequests ?? []).filter((r: any) => {
+    const d = new Date(r.startDate);
+    const matchYear = d.getFullYear() === year;
+    const matchMonth = month === 0 || d.getMonth() + 1 === month;
+    return matchYear && matchMonth;
+  });
+
+  const totalDays = filtered.reduce((sum: number, r: any) => sum + (r.days ?? 0), 0);
+  const pendingCount = filtered.filter((r: any) => r.status === "lop" && !r.approvedById).length;
+  const approvedCount = filtered.filter((r: any) => r.approvedById).length;
+  const uniqueEmployees = new Set(filtered.map((r: any) => r.employeeId)).size;
+
+  const handleExport = () => {
+    const headers = ["Employee", "Leave Type", "Start Date", "End Date", "Days", "Reason", "Approved By"];
+    const rows = filtered.map((r: any) => [
+      r.employeeName, r.leaveTypeName, r.startDate, r.endDate, r.days,
+      `"${(r.reason ?? "").replace(/"/g, '""')}"`,
+      r.approvedByName ?? "Pending",
+    ].join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `lwp_report_${year}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const MONTHS = ["All Months","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  return (
+    <div className="space-y-5">
+      {/* Header filters */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <Select value={String(year)} onValueChange={v => setYear(Number(v))}>
+            <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+            <SelectContent>{[year-1, year, year+1].map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}</SelectContent>
+          </Select>
+          <Select value={String(month)} onValueChange={v => setMonth(Number(v))}>
+            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectContent>{MONTHS.map((m, i) => <SelectItem key={i} value={String(i)}>{m}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        {isPrivileged && (
+          <Button size="sm" variant="outline" onClick={handleExport}>
+            <Download className="w-4 h-4 mr-1" /> Export CSV
+          </Button>
+        )}
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "LWP Requests", value: filtered.length, color: "text-red-600" },
+          { label: "Total LWP Days", value: totalDays, color: "text-red-700" },
+          { label: "Employees Affected", value: uniqueEmployees, color: "text-amber-600" },
+          { label: "Pending Approval", value: pendingCount, color: "text-amber-500" },
+        ].map(card => (
+          <div key={card.label} className="bg-white border border-border rounded-lg px-5 py-4 shadow-sm">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">{card.label}</p>
+            <p className={`text-2xl font-bold mt-1 ${card.color}`}>{card.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Explanation banner */}
+      <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-2 text-sm text-red-800">
+        <BanknoteIcon className="w-4 h-4 mt-0.5 shrink-0" />
+        <span>
+          <strong>Leave Without Pay (LWP)</strong> is triggered when an employee's leave balance is exhausted.
+          These days are unpaid and should be shared with payroll for salary deductions.
+        </span>
+      </div>
+
+      {/* LWP requests table */}
+      <div className="bg-white border border-border rounded-lg shadow-sm overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-red-50 text-xs uppercase tracking-wider text-red-700 border-b border-red-100">
+              {isPrivileged && <th className="text-left px-5 py-3">Employee</th>}
+              <th className="text-left px-5 py-3">Leave Type</th>
+              <th className="text-left px-5 py-3">Period</th>
+              <th className="text-center px-5 py-3">LWP Days</th>
+              <th className="text-left px-5 py-3">Reason</th>
+              <th className="text-left px-5 py-3">Approved By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {isLoading ? (
+              <tr><td colSpan={6} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={6} className="text-center py-12 text-muted-foreground">
+                <BanknoteIcon className="w-8 h-8 mx-auto mb-2 text-muted-foreground/30" />
+                No Leave Without Pay records for this period.
+              </td></tr>
+            ) : filtered.map((req: any, i: number) => (
+              <tr key={req.id} className={`border-b border-secondary ${i % 2 === 0 ? "bg-white" : "bg-red-50/30"}`}>
+                {isPrivileged && <td className="px-5 py-3 font-medium text-foreground">{req.employeeName}</td>}
+                <td className="px-5 py-3 text-muted-foreground">{req.leaveTypeName}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">{formatDate(req.startDate)} – {formatDate(req.endDate)}</td>
+                <td className="px-5 py-3 text-center font-semibold text-red-600">{req.days}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs max-w-[200px] truncate">{req.reason || "—"}</td>
+                <td className="px-5 py-3 text-muted-foreground text-xs">
+                  {req.approvedByName
+                    ? <span className="text-green-700">{req.approvedByName}</span>
+                    : <span className="text-amber-600">Pending</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          {filtered.length > 0 && (
+            <tfoot>
+              <tr className="bg-red-100 font-semibold text-red-800 border-t-2 border-red-200">
+                {isPrivileged && <td className="px-5 py-3">Total</td>}
+                <td className="px-5 py-3" colSpan={isPrivileged ? 2 : 3} />
+                <td className="px-5 py-3 text-center">{totalDays}</td>
+                <td colSpan={2} />
+              </tr>
+            </tfoot>
+          )}
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function LeaveReportsTab() {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -961,9 +1167,10 @@ function LeaveReportsTab() {
       if (r.status === "approved") { acc.approved++; acc.days += r.days; }
       else if (r.status === "pending") acc.pending++;
       else if (r.status === "rejected") acc.rejected++;
+      else if (r.status === "lop") { acc.lop++; acc.lopDays += r.days; }
       return acc;
     },
-    { total: 0, approved: 0, pending: 0, rejected: 0, days: 0 }
+    { total: 0, approved: 0, pending: 0, rejected: 0, days: 0, lop: 0, lopDays: 0 }
   );
 
   return (
@@ -994,12 +1201,13 @@ function LeaveReportsTab() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         {[
           { label: "Total Requests", value: stats.total, color: "text-foreground" },
           { label: "Approved", value: stats.approved, color: "text-green-600" },
           { label: "Pending", value: stats.pending, color: "text-amber-600" },
           { label: "Days Taken", value: stats.days, color: "text-blue-600" },
+          { label: "LWP Days", value: stats.lopDays, color: "text-red-600" },
         ].map(card => (
           <div key={card.label} className="bg-white border border-border rounded-lg px-5 py-4 shadow-sm">
             <p className="text-xs text-muted-foreground uppercase tracking-wide">{card.label}</p>
@@ -1066,6 +1274,7 @@ export default function Leave() {
     "/leave/balances": "balances",
     "/leave/compoff": "compoff",
     "/leave/holidays": "holidays",
+    "/leave/lwp": "lwp",
     "/leave/reports": "reports",
   };
   const activeTab = tabFromPath[location] ?? "requests";
@@ -1082,6 +1291,7 @@ export default function Leave() {
     { value: "balances", label: "Balances", path: "/leave/balances" },
     { value: "compoff", label: "Comp-Off", path: "/leave/compoff" },
     { value: "holidays", label: "Holidays", path: "/leave/holidays" },
+    { value: "lwp", label: "Without Pay", path: "/leave/lwp" },
     { value: "reports", label: "Reports", path: "/leave/reports" },
   ];
 
@@ -1204,6 +1414,10 @@ export default function Leave() {
 
         <TabsContent value="holidays">
           <HolidaysTab />
+        </TabsContent>
+
+        <TabsContent value="lwp">
+          <LwpTab />
         </TabsContent>
 
         <TabsContent value="reports">
