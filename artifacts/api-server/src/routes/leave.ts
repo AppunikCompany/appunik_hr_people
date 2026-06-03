@@ -497,6 +497,33 @@ function isSickLeaveType(lt: { name: string; code: string } | undefined): boolea
   return name.includes("sick") || code === "sl" || code === "sick" || code === "sick_leave";
 }
 
+function isLwpLeaveType(lt: { name: string; code: string } | undefined): boolean {
+  if (!lt) return false;
+  return lt.code.toLowerCase() === "lwp";
+}
+
+// ── Seed system LWP leave type ────────────────────────────────────────────────
+// Ensures a "Leave Without Pay" leave type with code "lwp" exists in the DB.
+// Called on server startup. Safe to call multiple times — upsert-style.
+export async function ensureLwpLeaveType(): Promise<void> {
+  try {
+    const existing = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.code, "lwp"));
+    if (existing.length === 0) {
+      await db.insert(leaveTypesTable).values({
+        id: crypto.randomUUID(),
+        name: "Leave Without Pay",
+        code: "lwp",
+        maxDaysPerYear: 0,     // No allocation — purely on-demand
+        isCarryForward: false,
+        isActive: true,
+      });
+      console.log("[seed] Leave Without Pay (lwp) leave type created");
+    }
+  } catch (err) {
+    console.error("[seed] Failed to ensure LWP leave type:", err);
+  }
+}
+
 // ── Auto-convert overdue pending_doc leaves to LOP ──
 export async function processOverduePendingDocLeaves(): Promise<void> {
   try {
@@ -560,8 +587,8 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
     let sickNeedsDoc = false;       // 3+ days: mandatory (can upload later)
     let documentDeadlineAt: Date | null = null;
 
-    // ── LV-09: Enforce leave policy rules ──
-    const [policy] = await db.select().from(leavePoliciesTable).where(eq(leavePoliciesTable.leaveTypeId, leaveTypeId));
+    // ── LV-09: Enforce leave policy rules (skipped for explicit LWP) ──
+    const [policy] = isLwpLeaveType(lt) ? [undefined] : await db.select().from(leavePoliciesTable).where(eq(leavePoliciesTable.leaveTypeId, leaveTypeId));
     if (policy) {
       // No leave during probation
       if (policy.noLeaveInProbation && emp?.probationEndDate) {
@@ -620,16 +647,21 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
       // 2 days (non-advance): optional — frontend shows soft warning, no backend block
     }
 
-    // ── LV-05: Auto-detect LOP when balance is exhausted ──
+    // ── LV-05: LWP explicit choice OR auto-detect LOP when balance exhausted ──
     const year = new Date().getFullYear();
-    const [bal] = await db.select().from(leaveBalancesTable)
-      .where(and(eq(leaveBalancesTable.employeeId, employeeId), eq(leaveBalancesTable.leaveTypeId, leaveTypeId), eq(leaveBalancesTable.year, year)));
-    // balance = remaining available (approval logic decrements it); no need to subtract used again
-    const isLop = !!bal && bal.balance < days;
+    let effectiveStatus: string;
 
-    // Determine final status
-    // pending_doc takes priority (employee must upload doc), then lop, then pending
-    const effectiveStatus = sickNeedsDoc ? "pending_doc" : isLop ? "lop" : "pending";
+    if (isLwpLeaveType(lt)) {
+      // Explicit LWP — employee consciously chose unpaid leave regardless of balance
+      effectiveStatus = "lop";
+    } else {
+      const [bal] = await db.select().from(leaveBalancesTable)
+        .where(and(eq(leaveBalancesTable.employeeId, employeeId), eq(leaveBalancesTable.leaveTypeId, leaveTypeId), eq(leaveBalancesTable.year, year)));
+      // balance = remaining available (approval logic decrements it); no need to subtract used again
+      const isLop = !!bal && bal.balance < days;
+      // pending_doc takes priority (employee must upload doc), then lop, then pending
+      effectiveStatus = sickNeedsDoc ? "pending_doc" : isLop ? "lop" : "pending";
+    }
 
     const lrId = crypto.randomUUID();
     await db.insert(leaveRequestsTable).values({
@@ -698,7 +730,8 @@ router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin
           eq(leaveBalancesTable.year, year)
         )
       );
-    if (bal) {
+    // LWP (explicit unpaid leave) — never deduct from any balance
+    if (bal && !isLwpLeaveType(lt)) {
       const newBalance = Math.max(0, bal.balance - request.days);
       await db
         .update(leaveBalancesTable)

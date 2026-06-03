@@ -24,6 +24,11 @@ function isSickLeave(types: any[], leaveTypeId: string): boolean {
   return name.includes("sick") || code === "sl" || code === "sick" || code === "sick_leave";
 }
 
+function isLwpType(types: any[], leaveTypeId: string): boolean {
+  const lt = types?.find((t: any) => t.id === leaveTypeId);
+  return (lt?.code ?? "").toLowerCase() === "lwp";
+}
+
 // ─── Apply Leave Dialog ────────────────────────────────────────────────────────
 function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data: currentUser } = useCurrentUser();
@@ -53,6 +58,7 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
 
   const isHalfDay = form.leaveDuration !== "full_day";
   const sick = isSickLeave(types as any[] ?? [], form.leaveTypeId);
+  const isExplicitLwp = isLwpType(types as any[] ?? [], form.leaveTypeId);
   const todayStr = new Date().toISOString().split("T")[0];
 
   // Estimate days for warning logic (rough count, exact count done server-side)
@@ -66,11 +72,12 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
   };
   const estDays = estimateDays();
 
-  // LWP detection: will any part of this request be unpaid?
+  // LWP detection: explicit choice OR balance exhausted
   const remaining = selectedBalance?.balance ?? null;
-  const isLwp = remaining !== null && estDays > 0 && remaining < estDays;
-  const lwpDays = isLwp ? Math.max(0, estDays - (remaining ?? 0)) : 0;
-  const isFullyLwp = isLwp && (remaining ?? 0) <= 0;
+  const isAutoLwp = !isExplicitLwp && remaining !== null && estDays > 0 && remaining < estDays;
+  const isLwp = isExplicitLwp || isAutoLwp;
+  const lwpDays = isExplicitLwp ? estDays : isAutoLwp ? Math.max(0, estDays - (remaining ?? 0)) : 0;
+  const isFullyLwp = isExplicitLwp || (isAutoLwp && (remaining ?? 0) <= 0);
 
   const isBackdated = sick && form.startDate && form.startDate < todayStr;
   // Advance = sick leave with a future start date — document required upfront, no grace period
@@ -111,9 +118,29 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
             <Select value={form.leaveTypeId} onValueChange={v => set("leaveTypeId", v)}>
               <SelectTrigger className="mt-1"><SelectValue placeholder="Select type..." /></SelectTrigger>
               <SelectContent>
-                {types && (types as any[]).length > 0
-                  ? (types as any[]).map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)
-                  : <SelectItem value="_none" disabled>No leave types configured</SelectItem>}
+                {(() => {
+                  const allTypes = (types as any[] ?? []);
+                  const regular = allTypes.filter((t: any) => (t.code ?? "").toLowerCase() !== "lwp");
+                  const lwp = allTypes.find((t: any) => (t.code ?? "").toLowerCase() === "lwp");
+                  return (
+                    <>
+                      {regular.length > 0
+                        ? regular.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)
+                        : <SelectItem value="_none" disabled>No leave types configured</SelectItem>}
+                      {lwp && (
+                        <>
+                          <div className="my-1 border-t border-border" />
+                          <SelectItem key={lwp.id} value={lwp.id}>
+                            <span className="flex items-center gap-1.5">
+                              <BanknoteIcon className="w-3.5 h-3.5 text-red-500" />
+                              {lwp.name}
+                            </span>
+                          </SelectItem>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
               </SelectContent>
             </Select>
           </div>
@@ -206,7 +233,12 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
               <div className="flex items-start gap-2">
                 <BanknoteIcon className="w-4 h-4 mt-0.5 shrink-0 text-red-600" />
                 <div className="text-sm text-red-800">
-                  {isFullyLwp ? (
+                  {isExplicitLwp ? (
+                    <>
+                      You have selected <strong>Leave Without Pay</strong>. {estDays > 0 ? `All ${estDays}d` : "This leave"} will be
+                      unpaid regardless of your available balance.
+                    </>
+                  ) : isFullyLwp ? (
                     <>
                       <strong>No leave balance remaining.</strong> This entire request ({estDays}d) will be
                       treated as <strong>Leave Without Pay</strong> and will affect your salary.
