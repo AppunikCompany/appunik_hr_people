@@ -517,3 +517,30 @@ export function useAdminUsers() {
     queryFn: () => fetchApi<AdminUser[]>("/admin/users"),
   });
 }
+
+export interface AppNotification {
+  id: string;
+  userId: string;
+  type: string;
+  title: string;
+  body: string | null;
+  link: string | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export function useNotifications() {
+  return useQuery({
+    queryKey: ["notifications"],
+    queryFn: () => fetchApi<AppNotification[]>("/notifications"),
+    refetchInterval: 30_000,
+  });
+}
+
+export function useUnreadCount() {
+  return useQuery({
+    queryKey: ["notifications-unread"],
+    queryFn: () => fetchApi<{ count: number }>("/notifications/unread-count"),
+    refetchInterval: 30_000,
+  });
+}

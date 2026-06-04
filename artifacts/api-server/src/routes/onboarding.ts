@@ -10,6 +10,7 @@ import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
 import { PRIVILEGED_ROLES, resolveEmployeeId } from "../lib/ownership";
+import { notifyEmployee } from "../lib/notify";
 
 const router: IRouter = Router();
 
@@ -91,6 +92,13 @@ router.post("/onboarding/checklists", requireAuth, requireRole("super_admin", "h
     }
 
     fireAutomationEvent({ event: "onboarding.started", employeeId }).catch(console.error);
+
+    notifyEmployee(employeeId, {
+      type: "onboarding.started",
+      title: "Your onboarding checklist is ready 🎉",
+      body: "HR has set up your onboarding checklist. Please complete all tasks as soon as possible.",
+      link: "/onboarding",
+    }).catch(console.error);
 
     res.status(201).json(await buildChecklist(checklist));
   } catch (e) {

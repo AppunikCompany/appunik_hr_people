@@ -13,6 +13,7 @@ import { eq, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
 import { PRIVILEGED_ROLES, canReadEmployee } from "../lib/ownership";
+import { notifyAllEmployees } from "../lib/notify";
 
 const router: IRouter = Router();
 
@@ -260,6 +261,13 @@ router.post("/employees", requireAuth, requireRole("super_admin", "hr_admin"), a
     const enriched = await enrichEmployee(employee);
 
     fireAutomationEvent({ event: "employee.created", employeeId: employee.id }).catch(console.error);
+
+    notifyAllEmployees({
+      type: "employee.joined",
+      title: `Welcome ${employee.firstName} ${employee.lastName}! 👋`,
+      body: `${employee.firstName} ${employee.lastName} has joined the team. Say hello!`,
+      link: "/employees",
+    }).catch(console.error);
 
     res.status(201).json(enriched);
   } catch (e) {

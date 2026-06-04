@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { Link, useRoute } from "wouter";
+import { Link, useRoute, useLocation } from "wouter";
 import { useClerk } from "@clerk/clerk-react";
 import { cn } from "@/lib/utils";
-import { useCurrentUser, useCompanyProfile } from "@/hooks/useApi";
+import { useCurrentUser, useCompanyProfile, useUnreadCount } from "@/hooks/useApi";
 import {
   Users,
   Clock,
@@ -22,6 +22,7 @@ import {
   LayoutDashboard,
   FileText,
   AlarmClock,
+  Bell,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -263,6 +264,27 @@ function ClerkLogoutItem() {
   );
 }
 
+function BellButton() {
+  const { data } = useUnreadCount();
+  const [, navigate] = useLocation();
+  const count = data?.count ?? 0;
+
+  return (
+    <button
+      onClick={() => navigate("/notifications")}
+      className="relative p-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+      title="Notifications"
+    >
+      <Bell className="w-4.5 h-4.5" />
+      {count > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-bold leading-none px-0.5">
+          {count > 99 ? "99+" : count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function Layout({ children }: LayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const { data: user } = useCurrentUser();
@@ -385,6 +407,10 @@ export function Layout({ children }: LayoutProps) {
       </aside>
 
       <main className="flex-1 overflow-y-auto">
+        {/* Top bar with bell */}
+        <div className="sticky top-0 z-10 h-14 bg-white border-b border-border flex items-center justify-end px-6">
+          <BellButton />
+        </div>
         {children}
       </main>
     </div>

@@ -4,6 +4,7 @@ import { companyDocumentsTable, hrEmployeeLettersTable, employeesTable } from "@
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { isPrivileged } from "../lib/ownership";
+import { notifyEmployee } from "../lib/notify";
 
 const router: IRouter = Router();
 
@@ -196,6 +197,13 @@ router.post("/documents/employee", requireAuth, requireRole("super_admin", "hr_a
       mimeType: mimeType.trim(),
       uploadedByUserId: req.user?.id ?? null,
     });
+
+    notifyEmployee(employeeId, {
+      type: "document.uploaded",
+      title: "New document from HR",
+      body: `HR has uploaded "${name.trim()}" (${(documentType ?? "other").replace(/_/g, " ")}) to your profile.`,
+      link: "/letters",
+    }).catch(console.error);
 
     res.status(201).json({
       id, employeeId, name: name.trim(), documentType: documentType ?? "other",

@@ -17,6 +17,7 @@ import reimbursementsRouter from "./reimbursements";
 import investmentsRouter from "./investments";
 import lettersRouter from "./letters";
 import documentsRouter from "./documents";
+import notificationsRouter from "./notifications";
 import zktecoPingRouter from "./zkteco";
 
 const router: IRouter = Router();
@@ -39,6 +40,7 @@ router.use(reimbursementsRouter);
 router.use(investmentsRouter);
 router.use(lettersRouter);
 router.use(documentsRouter);
+router.use(notificationsRouter);
 router.use(zktecoPingRouter);
 
 export default router;

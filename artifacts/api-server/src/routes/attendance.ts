@@ -15,6 +15,7 @@ import { eq, and, inArray, lte, gte, isNull, desc, or } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { resolveEmployeeId, canReadEmployee, isPrivileged } from "../lib/ownership";
 import { fireAutomationEvent } from "../lib/automations";
+import { notifyEmployee } from "../lib/notify";
 
 const router: IRouter = Router();
 
@@ -483,6 +484,14 @@ router.post("/attendance/wfh/:id/approve", requireAuth, requireRole("super_admin
     const [updated] = approved
       ? await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, recordId))
       : [null];
+
+    notifyEmployee(record.employeeId, {
+      type: approved ? "wfh.approved" : "wfh.rejected",
+      title: approved ? "WFH request approved ✓" : "WFH request rejected",
+      body: approved ? `Your Work From Home request for ${record.date} has been approved.` : `Your WFH request for ${record.date} was not approved.`,
+      link: "/attendance/my",
+    }).catch(console.error);
+
     res.json({ approved, record: updated });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -619,6 +628,17 @@ router.patch("/attendance/regularization/:id", requireAuth, requireRole("super_a
     }
 
     const [updated] = await db.select().from(attendanceRegularizationsTable).where(eq(attendanceRegularizationsTable.id, id));
+
+    // Notify employee of outcome
+    if (updated) {
+      notifyEmployee(updated.employeeId, {
+        type: status === "approved" ? "regularization.approved" : "regularization.rejected",
+        title: status === "approved" ? "Attendance regularization approved ✓" : "Attendance regularization rejected",
+        body: `Your regularization request for ${updated.date} has been ${status}${reviewNote ? `. Note: ${reviewNote}` : ""}.`,
+        link: "/attendance/my",
+      }).catch(console.error);
+    }
+
     res.json(updated);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -722,25 +742,26 @@ export async function autoClockOutMissed(): Promise<void> {
 }
 
 // ── Scheduler helper ─────────────────────────────────────────────────────────
-// Schedules `fn` to run at a specific IST hour daily.
-// Checks every minute whether the target hour has been reached and not yet run.
-export function scheduleDailyIST(hour: number, fn: () => Promise<void>): void {
+// Schedules `fn` to run at a specific IST hour (and optional minute) daily.
+// Checks every minute whether the target time has been reached and not yet run today.
+export function scheduleDailyIST(hour: number, fn: () => Promise<void>, minute = 0): void {
   let lastRunDate = "";
 
   setInterval(() => {
     const nowIST = new Intl.DateTimeFormat("en-US", {
       timeZone: COMPANY_TIMEZONE,
-      hour: "numeric",
+      hour: "numeric", minute: "numeric",
       hour12: false,
       year: "numeric", month: "2-digit", day: "2-digit",
     }).formatToParts(new Date());
 
     const h = parseInt(nowIST.find((p) => p.type === "hour")?.value ?? "0", 10);
+    const m = parseInt(nowIST.find((p) => p.type === "minute")?.value ?? "0", 10);
     const dateStr = `${nowIST.find((p) => p.type === "year")?.value}-${nowIST.find((p) => p.type === "month")?.value}-${nowIST.find((p) => p.type === "day")?.value}`;
 
-    if (h === hour && dateStr !== lastRunDate) {
+    if (h === hour && m >= minute && dateStr !== lastRunDate) {
       lastRunDate = dateStr;
-      fn().catch((e) => console.error(`[scheduler] Daily IST ${hour}:00 job failed:`, e));
+      fn().catch((e) => console.error(`[scheduler] Daily IST ${hour}:${String(minute).padStart(2,"0")} job failed:`, e));
     }
   }, 60_000); // check every minute
 }

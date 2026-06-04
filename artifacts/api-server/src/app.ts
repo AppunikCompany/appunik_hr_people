@@ -11,6 +11,7 @@ import { seedSystemRoles } from "./lib/seedRoles";
 import { handleAdmsPush } from "./routes/zkteco";
 import { processOverduePendingDocLeaves, ensureLwpLeaveType } from "./routes/leave";
 import { autoClockOutMissed, scheduleDailyIST } from "./routes/attendance";
+import { notifyForgottenClockIn, notifyForgottenClockOut, notifyBirthdaysAndAnniversaries } from "./lib/scheduledNotifications";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -44,6 +45,11 @@ ensureLwpLeaveType();
 
 // Auto clock-out at 10:00 PM IST — closes any open WFO records with full hours calc
 scheduleDailyIST(22, autoClockOutMissed);
+
+// Scheduled in-app notifications (IST)
+scheduleDailyIST(9,  notifyBirthdaysAndAnniversaries, 0);  // 9:00 AM  — birthdays & anniversaries
+scheduleDailyIST(10, notifyForgottenClockIn, 15);           // 10:15 AM — forgot to clock in
+scheduleDailyIST(19, notifyForgottenClockOut, 15);          // 7:15 PM  — forgot to clock out
 
 // ZKTeco ADMS push — device sends plain-text punches, no auth header
 // Must be registered BEFORE the auth middleware router

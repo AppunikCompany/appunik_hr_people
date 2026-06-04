@@ -14,3 +14,4 @@ export * from "./letters";
 export * from "./zkteco";
 export * from "./announcements";
 export * from "./exit";
+export * from "./notifications";

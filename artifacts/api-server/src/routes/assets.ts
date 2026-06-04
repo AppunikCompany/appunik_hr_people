@@ -10,6 +10,7 @@ import {
 import { eq, and, isNull } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { isPrivileged } from "../lib/ownership";
+import { notifyEmployee } from "../lib/notify";
 import { fireAutomationEvent } from "../lib/automations";
 import { importLogsTable } from "@workspace/db";
 
@@ -162,6 +163,13 @@ router.post("/assets/:id/assign", requireAuth, requireRole("super_admin", "hr_ad
       event: "asset.assigned",
       employeeId,
       variables: { assetName: asset.name, assetCode: asset.assetCode },
+    }).catch(console.error);
+
+    notifyEmployee(employeeId, {
+      type: "asset.assigned",
+      title: "Asset assigned to you",
+      body: `${asset.name} (${asset.assetCode}) has been assigned to you.`,
+      link: "/assets",
     }).catch(console.error);
 
     res.json(assignment);

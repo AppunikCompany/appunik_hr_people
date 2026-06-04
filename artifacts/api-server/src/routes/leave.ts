@@ -12,6 +12,7 @@ import {
 import { eq, and, gte, lte, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
+import { notifyEmployee, notifyHrAdmins } from "../lib/notify";
 import { resolveEmployeeId, isPrivileged } from "../lib/ownership";
 
 const router: IRouter = Router();
@@ -680,6 +681,15 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
       variables: { leaveType: lt?.name ?? "", startDate, endDate, days: String(days), reason, isLop: String(isLop) },
     }).catch(console.error);
 
+    // In-app: notify HR that a leave was applied
+    const empName = emp ? `${emp.firstName} ${emp.lastName}` : "An employee";
+    notifyHrAdmins({
+      type: "leave.applied",
+      title: `New leave request — ${empName}`,
+      body: `${empName} applied for ${days}d of ${lt?.name ?? "leave"} (${startDate} – ${endDate})${effectiveStatus === "lop" ? " — Leave Without Pay" : ""}`,
+      link: "/leave",
+    }).catch(console.error);
+
     res.status(201).json({
       ...request,
       employeeName: emp ? `${emp.firstName} ${emp.lastName}` : "",
@@ -752,6 +762,13 @@ router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin
       variables: { leaveType: lt?.name ?? "", startDate: request.startDate, endDate: request.endDate, days: String(request.days) },
     }).catch(console.error);
 
+    notifyEmployee(request.employeeId, {
+      type: "leave.approved",
+      title: "Leave request approved ✓",
+      body: `Your ${lt?.name ?? "leave"} from ${request.startDate} to ${request.endDate} (${request.days}d) has been approved.`,
+      link: "/leave",
+    }).catch(console.error);
+
     // Lookup approver name
     const [approver] = approverId ? await db.select().from(employeesTable).where(eq(employeesTable.userId, approverId)) : [null];
     res.json({
@@ -792,6 +809,13 @@ router.post("/leave/requests/:id/reject", requireAuth, requireRole("super_admin"
       event: "leave.rejected",
       employeeId: request.employeeId,
       variables: { leaveType: lt?.name ?? "", startDate: request.startDate, endDate: request.endDate },
+    }).catch(console.error);
+
+    notifyEmployee(request.employeeId, {
+      type: "leave.rejected",
+      title: "Leave request rejected",
+      body: `Your ${lt?.name ?? "leave"} from ${request.startDate} to ${request.endDate} was not approved.${comment ? ` Reason: ${comment}` : ""}`,
+      link: "/leave",
     }).catch(console.error);
 
     const [approver] = approverId ? await db.select().from(employeesTable).where(eq(employeesTable.userId, approverId)) : [null];
