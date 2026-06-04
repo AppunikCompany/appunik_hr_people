@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { useLeaveRequests, useLeaveTypes, useEmployees, useLeaveBalances, useCurrentUser, fetchApi } from "@/hooks/useApi";
+import { useLeaveRequests, useLeaveTypes, useEmployees, useLeaveBalances, useCurrentUser, useHolidays, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,11 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const { data: balances } = useLeaveBalances(balanceEmpId || undefined);
   const selectedBalance = (balances as any[] ?? []).find((b: any) => b.leaveTypeId === form.leaveTypeId);
 
+  // Fetch holidays so estimateDays matches the server-side calculation
+  const startYear = form.startDate ? parseInt(form.startDate.slice(0, 4)) : new Date().getFullYear();
+  const { data: holidays = [] } = useHolidays(startYear);
+  const holidayDateSet = new Set((holidays as any[]).map((h: any) => h.date));
+
   // Reset acknowledgement whenever leave type or employee changes
   useEffect(() => { setLwpAcknowledged(false); }, [form.leaveTypeId, form.employeeId]);
 
@@ -61,13 +66,19 @@ function ApplyLeaveDialog({ open, onClose }: { open: boolean; onClose: () => voi
   const isExplicitLwp = isLwpType(types as any[] ?? [], form.leaveTypeId);
   const todayStr = new Date().toISOString().split("T")[0];
 
-  // Estimate days for warning logic (rough count, exact count done server-side)
+  // Estimate days — matches server logic: weekdays only, holidays excluded
   const estimateDays = () => {
     if (isHalfDay) return 0.5;
     if (!form.startDate || !form.endDate) return 0;
-    let count = 0; const cur = new Date(form.startDate);
+    let count = 0;
+    const cur = new Date(form.startDate);
     const end = new Date(form.endDate);
-    while (cur <= end) { const d = cur.getDay(); if (d !== 0 && d !== 6) count++; cur.setDate(cur.getDate() + 1); }
+    while (cur <= end) {
+      const d = cur.getDay();
+      const dateStr = cur.toISOString().split("T")[0];
+      if (d !== 0 && d !== 6 && !holidayDateSet.has(dateStr)) count++;
+      cur.setDate(cur.getDate() + 1);
+    }
     return count;
   };
   const estDays = estimateDays();

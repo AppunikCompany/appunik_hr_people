@@ -651,15 +651,17 @@ router.post("/leave/requests", requireAuth, async (req, res): Promise<void> => {
     // ── LV-05: LWP explicit choice OR auto-detect LOP when balance exhausted ──
     const year = new Date().getFullYear();
     let effectiveStatus: string;
+    let isLop = false; // declared here so it's always in scope for the response/events below
 
     if (isLwpLeaveType(lt)) {
       // Explicit LWP — employee consciously chose unpaid leave regardless of balance
       effectiveStatus = "lop";
+      isLop = true;
     } else {
       const [bal] = await db.select().from(leaveBalancesTable)
         .where(and(eq(leaveBalancesTable.employeeId, employeeId), eq(leaveBalancesTable.leaveTypeId, leaveTypeId), eq(leaveBalancesTable.year, year)));
       // balance = remaining available (approval logic decrements it); no need to subtract used again
-      const isLop = !!bal && bal.balance < days;
+      isLop = !!bal && bal.balance < days;
       // pending_doc takes priority (employee must upload doc), then lop, then pending
       effectiveStatus = sickNeedsDoc ? "pending_doc" : isLop ? "lop" : "pending";
     }
