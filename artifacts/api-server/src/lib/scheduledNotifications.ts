@@ -15,8 +15,22 @@ function todayIST(): string {
   }).format(new Date());
 }
 
+/** Returns true if today is Saturday or Sunday in IST. */
+function isTodayWeekendIST(): boolean {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: COMPANY_TIMEZONE,
+    weekday: "short",
+  }).formatToParts(new Date());
+  const weekday = parts.find((p) => p.type === "weekday")?.value;
+  return weekday === "Sat" || weekday === "Sun";
+}
+
 // ── Clock-in reminder (runs at 10:15 AM IST) ─────────────────────────────────
 export async function notifyForgottenClockIn(): Promise<void> {
+  if (isTodayWeekendIST()) {
+    console.log("[scheduled] Clock-in reminder: skipping — weekend");
+    return;
+  }
   try {
     const today = todayIST();
 
@@ -50,6 +64,10 @@ export async function notifyForgottenClockIn(): Promise<void> {
 
 // ── Clock-out reminder (runs at 7:15 PM IST) ─────────────────────────────────
 export async function notifyForgottenClockOut(): Promise<void> {
+  if (isTodayWeekendIST()) {
+    console.log("[scheduled] Clock-out reminder: skipping — weekend");
+    return;
+  }
   try {
     const today = todayIST();
 

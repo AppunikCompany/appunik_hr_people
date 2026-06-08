@@ -544,3 +544,20 @@ export function useUnreadCount() {
     refetchInterval: 30_000,
   });
 }
+
+export interface EmployeeEquipmentItem {
+  id: string;
+  employeeId: string;
+  equipmentType: string;
+  customDescription: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export function useEmployeeEquipment(employeeId: string | null | undefined) {
+  return useQuery({
+    queryKey: ["employee-equipment", employeeId],
+    queryFn: () => fetchApi<EmployeeEquipmentItem[]>(`/employees/${employeeId}/equipment`),
+    enabled: !!employeeId,
+  });
+}

@@ -103,7 +103,8 @@ const ALL_NAV_ITEMS: NavItem[] = [
     label: "Assets",
     href: "/assets",
     icon: Package,
-    module: "assets",
+    // Employees see their own equipment; HR sees the full company asset inventory.
+    // No module gate — always visible to all authenticated users.
   },
   {
     label: "Performance",

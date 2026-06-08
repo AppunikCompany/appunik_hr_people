@@ -405,6 +405,49 @@ router.post("/employees/:employeeId/equipment", requireAuth, async (req, res) =>
   }
 });
 
+/** Edit an equipment item.
+ *  - Employee: can only edit their own items
+ *  - HR/admin: can edit any
+ */
+router.patch("/employees/:employeeId/equipment/:itemId", requireAuth, async (req, res) => {
+  try {
+    const { employeeId: targetId, itemId } = req.params as { employeeId: string; itemId: string };
+
+    if (!isPrivileged(req)) {
+      const [self] = await db.select({ id: employeesTable.id })
+        .from(employeesTable).where(eq(employeesTable.userId, req.user!.id));
+      if (!self || self.id !== targetId) {
+        res.status(403).json({ error: "Access denied" }); return;
+      }
+    }
+
+    const { equipmentType, customDescription, notes } = req.body as {
+      equipmentType?: string; customDescription?: string; notes?: string;
+    };
+
+    if (equipmentType && !EQUIPMENT_TYPES.includes(equipmentType)) {
+      res.status(400).json({ error: "Invalid equipment type" }); return;
+    }
+    if (equipmentType === "other" && !customDescription?.trim()) {
+      res.status(400).json({ error: "Description is required for 'Other' equipment" }); return;
+    }
+
+    await db.update(employeeEquipmentTable)
+      .set({
+        ...(equipmentType && { equipmentType }),
+        customDescription: customDescription !== undefined ? (customDescription?.trim() || null) : undefined,
+        notes: notes !== undefined ? (notes?.trim() || null) : undefined,
+      })
+      .where(and(eq(employeeEquipmentTable.id, itemId), eq(employeeEquipmentTable.employeeId, targetId)));
+
+    const [updated] = await db.select().from(employeeEquipmentTable)
+      .where(eq(employeeEquipmentTable.id, itemId));
+    res.json(updated);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 /** Delete an equipment item.
  *  - Employee: can only delete their own items
  *  - HR/admin: can delete any

@@ -1,16 +1,41 @@
-import { useState } from "react";
-import { useAssets, useAssetCategories, useEmployees, fetchApi } from "@/hooks/useApi";
+import { useState, useEffect } from "react";
+import { useAssets, useAssetCategories, useEmployees, useCurrentUser, useEmployeeEquipment, fetchApi, type EmployeeEquipmentItem } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
-import { formatDate } from "@/lib/utils";
-import { Plus, Search, UserCheck, RotateCcw } from "lucide-react";
+import { Plus, Search, UserCheck, RotateCcw, Pencil, Trash2, Monitor, Package } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+
+// ─── Equipment type helpers ────────────────────────────────────────────────
+
+const EQUIPMENT_TYPES = [
+  { value: "laptop",   label: "Laptop" },
+  { value: "desktop",  label: "Desktop PC" },
+  { value: "cpu",      label: "CPU / Tower" },
+  { value: "monitor",  label: "Monitor" },
+  { value: "mouse",    label: "Mouse" },
+  { value: "keyboard", label: "Keyboard" },
+  { value: "headset",  label: "Headset" },
+  { value: "webcam",   label: "Webcam" },
+  { value: "printer",  label: "Printer" },
+  { value: "tablet",   label: "Tablet" },
+  { value: "phone",    label: "Phone" },
+  { value: "other",    label: "Other" },
+];
+
+function equipmentLabel(type: string, custom?: string | null) {
+  if (type === "other") return custom || "Other";
+  return EQUIPMENT_TYPES.find((t) => t.value === type)?.label ?? type;
+}
+
+// ─── HR-side dialogs ───────────────────────────────────────────────────────
 
 function AddCategoryDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [name, setName] = useState("");
@@ -134,7 +159,221 @@ function AssignAssetDialog({ assetId, open, onClose }: { assetId: string; open: 
   );
 }
 
-export default function Assets() {
+// ─── Employee equipment dialog (add / edit) ────────────────────────────────
+
+interface EquipmentFormState {
+  equipmentType: string;
+  customDescription: string;
+  notes: string;
+}
+
+const EMPTY_EQUIP_FORM: EquipmentFormState = { equipmentType: "", customDescription: "", notes: "" };
+
+function EquipmentDialog({
+  open,
+  onClose,
+  employeeId,
+  editing,
+}: {
+  open: boolean;
+  onClose: () => void;
+  employeeId: string;
+  editing: EmployeeEquipmentItem | null;
+}) {
+  const [form, setForm] = useState<EquipmentFormState>(EMPTY_EQUIP_FORM);
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    if (open) {
+      setForm(
+        editing
+          ? { equipmentType: editing.equipmentType, customDescription: editing.customDescription ?? "", notes: editing.notes ?? "" }
+          : EMPTY_EQUIP_FORM
+      );
+    }
+  }, [open, editing]);
+
+  const set = (k: keyof EquipmentFormState, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const addMutation = useMutation({
+    mutationFn: (d: any) => fetchApi(`/employees/${employeeId}/equipment`, { method: "POST", body: JSON.stringify(d) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-equipment", employeeId] }); onClose(); toast.success("Equipment added"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const editMutation = useMutation({
+    mutationFn: (d: any) => fetchApi(`/employees/${employeeId}/equipment/${editing!.id}`, { method: "PATCH", body: JSON.stringify(d) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-equipment", employeeId] }); onClose(); toast.success("Equipment updated"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const handleSave = () => {
+    if (!form.equipmentType) { toast.error("Please select an equipment type"); return; }
+    if (form.equipmentType === "other" && !form.customDescription.trim()) { toast.error("Please describe the equipment"); return; }
+    const payload = {
+      equipmentType: form.equipmentType,
+      customDescription: form.customDescription.trim() || undefined,
+      notes: form.notes.trim() || undefined,
+    };
+    if (editing) editMutation.mutate(payload);
+    else addMutation.mutate(payload);
+  };
+
+  const isPending = addMutation.isPending || editMutation.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-sm" onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
+        <DialogHeader>
+          <DialogTitle>{editing ? "Edit Equipment" : "Add Equipment"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div>
+            <Label>Equipment Type *</Label>
+            <Select value={form.equipmentType} onValueChange={v => set("equipmentType", v)}>
+              <SelectTrigger className="mt-1"><SelectValue placeholder="Select type..." /></SelectTrigger>
+              <SelectContent>
+                {EQUIPMENT_TYPES.map(t => (
+                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {form.equipmentType === "other" && (
+            <div>
+              <Label>Description *</Label>
+              <Input
+                value={form.customDescription}
+                onChange={e => set("customDescription", e.target.value)}
+                className="mt-1"
+                placeholder="e.g. USB hub, external SSD..."
+              />
+            </div>
+          )}
+          <div>
+            <Label>Notes <span className="text-muted-foreground text-xs">(optional)</span></Label>
+            <Textarea
+              value={form.notes}
+              onChange={e => set("notes", e.target.value)}
+              className="mt-1 resize-none"
+              rows={2}
+              placeholder="e.g. Model number, condition, any details..."
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={handleSave} disabled={isPending}>
+            {isPending ? "Saving..." : editing ? "Save Changes" : "Add Equipment"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Employee "My Equipment" view ──────────────────────────────────────────
+
+function MyEquipmentView({ employeeId }: { employeeId: string }) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<EmployeeEquipmentItem | null>(null);
+  const { data: items = [], isLoading } = useEmployeeEquipment(employeeId);
+  const qc = useQueryClient();
+
+  const deleteMutation = useMutation({
+    mutationFn: (itemId: string) => fetchApi(`/employees/${employeeId}/equipment/${itemId}`, { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-equipment", employeeId] }); toast.success("Equipment removed"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const openAdd = () => { setEditing(null); setDialogOpen(true); };
+  const openEdit = (item: EmployeeEquipmentItem) => { setEditing(item); setDialogOpen(true); };
+
+  return (
+    <PageContainer>
+      <PageHeader
+        title="My Equipment"
+        breadcrumbs={[{ label: "Assets" }]}
+        actions={
+          <Button size="sm" onClick={openAdd}>
+            <Plus className="w-4 h-4 mr-1" /> Add Equipment
+          </Button>
+        }
+      />
+
+      <div className="max-w-2xl">
+        <p className="text-sm text-muted-foreground mb-4">
+          Declare the devices and equipment you use for work. Keep this updated so IT has an accurate picture.
+        </p>
+
+        {isLoading ? (
+          <div className="text-center py-16 text-muted-foreground">Loading…</div>
+        ) : (items as EmployeeEquipmentItem[]).length === 0 ? (
+          <div className="bg-white border border-border rounded-xl flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground shadow-sm">
+            <Monitor className="w-10 h-10 text-muted-foreground/30" />
+            <p className="text-sm">No equipment declared yet.</p>
+            <Button size="sm" variant="outline" onClick={openAdd}><Plus className="w-4 h-4 mr-1" /> Add your first item</Button>
+          </div>
+        ) : (
+          <div className="bg-white border border-border rounded-xl shadow-sm overflow-hidden divide-y divide-border">
+            {(items as EmployeeEquipmentItem[]).map((item) => (
+              <div key={item.id} className="flex items-start gap-3 px-5 py-4">
+                <div className="mt-0.5 w-8 h-8 rounded-lg bg-secondary flex items-center justify-center flex-shrink-0">
+                  <Package className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    {equipmentLabel(item.equipmentType, item.customDescription)}
+                  </p>
+                  {item.notes && (
+                    <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{item.notes}</p>
+                  )}
+                  <p className="text-[11px] text-muted-foreground/60 mt-1">
+                    Added {new Date(item.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                    onClick={() => openEdit(item)}
+                    title="Edit"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                    onClick={() => {
+                      if (confirm("Remove this equipment?")) deleteMutation.mutate(item.id);
+                    }}
+                    title="Remove"
+                    disabled={deleteMutation.isPending}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <EquipmentDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        employeeId={employeeId}
+        editing={editing}
+      />
+    </PageContainer>
+  );
+}
+
+// ─── HR "All Assets" view ──────────────────────────────────────────────────
+
+function HrAssetsView() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [addOpen, setAddOpen] = useState(false);
@@ -205,7 +444,7 @@ export default function Assets() {
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">No assets found</td></tr>
               ) : filtered.map((asset: any, i: number) => (
-                <tr key={asset.id} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
+                <tr key={asset.id} className={cn(i % 2 === 0 ? "bg-white" : "bg-background")}>
                   <td className="px-5 py-3 font-medium text-foreground">{asset.name}</td>
                   <td className="px-5 py-3 font-mono text-xs text-muted-foreground">{asset.assetCode}</td>
                   <td className="px-5 py-3 text-muted-foreground">{asset.categoryName}</td>
@@ -238,4 +477,28 @@ export default function Assets() {
       )}
     </PageContainer>
   );
+}
+
+// ─── Root component ────────────────────────────────────────────────────────
+
+export default function Assets() {
+  const { data: user } = useCurrentUser();
+
+  // Employees see their own equipment management
+  if (user?.role === "employee") {
+    const employeeId = user.employeeId;
+    if (!employeeId) {
+      return (
+        <PageContainer>
+          <div className="text-center py-20 text-muted-foreground text-sm">
+            No employee record found. Please contact HR.
+          </div>
+        </PageContainer>
+      );
+    }
+    return <MyEquipmentView employeeId={employeeId} />;
+  }
+
+  // HR admins / super admins see the full company asset inventory
+  return <HrAssetsView />;
 }
