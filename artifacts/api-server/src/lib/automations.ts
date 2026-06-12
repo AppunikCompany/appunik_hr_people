@@ -44,6 +44,8 @@ export type AutomationEvent =
   | "kra.completed"
   | "kra.deadline_approaching"
   | "attendance.wfh_requested"
+  | "attendance.clock_in_reminder"
+  | "attendance.clock_out_reminder"
   | "employee.document_expiry"
   | "holiday.announcement";
 

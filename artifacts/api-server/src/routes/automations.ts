@@ -220,6 +220,8 @@ const SEED_TEMPLATES = [
   { code: "new_employee_announcement", name: "New Employee Announcement", subject: "Welcome Our New Colleague — {{fullName}}!", bodyHtml: "<p>Team,</p><p>We are excited to announce that {{fullName}} has joined us as a new team member. Please help them settle in!</p><p>Best regards,<br>HR Team</p>", variables: ["fullName"] },
   { code: "exit_offboarding", name: "Exit / Offboarding Email", subject: "Offboarding Process Initiated for {{fullName}}", bodyHtml: "<p>Dear {{fullName}},</p><p>Your offboarding process has been initiated. Please complete all pending handover tasks and return company assets.</p><p>Best regards,<br>HR Team</p>", variables: ["fullName"] },
   { code: "document_expiry_alert", name: "Document Expiry Alert", subject: "Document Expiring Soon: {{documentType}}", bodyHtml: "<p>Dear {{fullName}},</p><p>Your document \"{{documentType}}\" is expiring on {{expiryDate}}. Please renew and upload the updated document in the HR portal.</p><p>Best regards,<br>HR Team</p>", variables: ["fullName", "documentType", "expiryDate"] },
+  { code: "clock_in_reminder", name: "Clock-In Reminder", subject: "Reminder: You haven't clocked in yet today", bodyHtml: "<p>Dear {{fullName}},</p><p>This is a friendly reminder that you haven't clocked in yet today. Please log in to the HR portal and mark your attendance — either clock in or mark WFH.</p><p>If you have already done so and received this in error, please ignore.</p><p>Best regards,<br>HR Team</p>", variables: ["fullName"] },
+  { code: "clock_out_reminder", name: "Clock-Out Reminder", subject: "Reminder: Please clock out before you leave", bodyHtml: "<p>Dear {{fullName}},</p><p>It's time to wrap up for the day! Please don't forget to clock out in the HR portal so your hours are recorded correctly.</p><p>Best regards,<br>HR Team</p>", variables: ["fullName"] },
 ];
 
 const SEED_RULES = [
@@ -238,6 +240,8 @@ const SEED_RULES = [
   { code: "rule_new_emp_announcement", name: "New Employee Announcement", triggerType: "event", triggerEvent: "employee.created", cronExpr: null, templateCode: "new_employee_announcement", recipients: "hr_admin" },
   { code: "rule_exit", name: "Exit / Offboarding", triggerType: "event", triggerEvent: "employee.offboarding_started", cronExpr: null, templateCode: "exit_offboarding", recipients: "employee,hr_admin" },
   { code: "rule_doc_expiry", name: "Document Expiry Alert", triggerType: "event", triggerEvent: "employee.document_expiry", cronExpr: null, templateCode: "document_expiry_alert", recipients: "employee" },
+  { code: "rule_clock_in_reminder", name: "Clock-In Reminder Email", triggerType: "event", triggerEvent: "attendance.clock_in_reminder", cronExpr: null, templateCode: "clock_in_reminder", recipients: "employee" },
+  { code: "rule_clock_out_reminder", name: "Clock-Out Reminder Email", triggerType: "event", triggerEvent: "attendance.clock_out_reminder", cronExpr: null, templateCode: "clock_out_reminder", recipients: "employee" },
 ];
 
 router.post("/automations/seed-templates", requireAuth, requireRole("super_admin", "hr_admin"), async (_req, res) => {

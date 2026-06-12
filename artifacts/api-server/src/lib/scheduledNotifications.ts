@@ -3,8 +3,9 @@
  */
 
 import { db, employeesTable, attendanceRecordsTable } from "@workspace/db";
-import { eq, inArray, and, isNull } from "drizzle-orm";
+import { eq, inArray, and } from "drizzle-orm";
 import { notifyUser } from "./notify";
+import { fireAutomationEvent } from "./automations";
 
 const COMPANY_TIMEZONE = "Asia/Kolkata";
 
@@ -54,6 +55,8 @@ export async function notifyForgottenClockIn(): Promise<void> {
         body: "You haven't clocked in yet today. Please clock in or mark WFH.",
         link: "/attendance/my",
       });
+      // Also fire automation event so any active email rule is triggered
+      await fireAutomationEvent({ event: "attendance.clock_in_reminder", employeeId: emp.id }).catch(() => {});
       notified++;
     }
     console.log(`[scheduled] Clock-in reminder: notified ${notified} employees`);
@@ -100,6 +103,8 @@ export async function notifyForgottenClockOut(): Promise<void> {
         body: "Your shift is ending. Please clock out to record your hours for today.",
         link: "/attendance/my",
       });
+      // Also fire automation event so any active email rule is triggered
+      await fireAutomationEvent({ event: "attendance.clock_out_reminder", employeeId: emp.id }).catch(() => {});
       notified++;
     }
     console.log(`[scheduled] Clock-out reminder: notified ${notified} employees`);
