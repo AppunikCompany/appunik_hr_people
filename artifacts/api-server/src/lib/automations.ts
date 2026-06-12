@@ -1,4 +1,3 @@
-import { Resend } from "resend";
 import { db } from "@workspace/db";
 import {
   automationRulesTable,
@@ -12,11 +11,40 @@ import {
 } from "@workspace/db";
 import { eq, and, inArray } from "drizzle-orm";
 
-const resend = process.env.RESEND_API_KEY
-  ? new Resend(process.env.RESEND_API_KEY)
-  : null;
+const ZEPTOMAIL_TOKEN = process.env.ZEPTOMAIL_API_KEY ?? "";
+// ZeptoMail regional endpoint — India (in) or global (com)
+const ZEPTOMAIL_URL = process.env.ZEPTOMAIL_URL ?? "https://api.zeptomail.in/v1.1/email";
+const FROM_EMAIL = process.env.FROM_EMAIL ?? "hr@appunik.com";
+const FROM_NAME  = process.env.FROM_NAME  ?? "Appunik HR";
 
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "hr@technovasolutions.com";
+async function sendEmailViaZeptoMail(opts: {
+  to: string[];
+  subject: string;
+  html: string;
+}): Promise<void> {
+  if (!ZEPTOMAIL_TOKEN) throw new Error("ZEPTOMAIL_API_KEY not configured");
+
+  for (const address of opts.to) {
+    const res = await fetch(ZEPTOMAIL_URL, {
+      method: "POST",
+      headers: {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authorization": `Zoho-enczapikey ${ZEPTOMAIL_TOKEN}`,
+      },
+      body: JSON.stringify({
+        from: { address: FROM_EMAIL, name: FROM_NAME },
+        to: [{ email_address: { address, name: "" } }],
+        subject: opts.subject,
+        htmlbody: opts.html,
+      }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`ZeptoMail error ${res.status}: ${text}`);
+    }
+  }
+}
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
@@ -125,10 +153,9 @@ export async function fireAutomationEvent(opts: FireEventOptions): Promise<void>
     let status: "sent" | "failed" = "sent";
     let errorMsg: string | null = null;
 
-    if (resend && uniqueEmails.length > 0) {
+    if (ZEPTOMAIL_TOKEN && uniqueEmails.length > 0) {
       try {
-        await resend.emails.send({
-          from: FROM_EMAIL,
+        await sendEmailViaZeptoMail({
           to: uniqueEmails,
           subject,
           html: `<div style="font-family:Inter,sans-serif;max-width:600px;margin:auto">${body.replace(/\n/g, "<br>")}</div>`,

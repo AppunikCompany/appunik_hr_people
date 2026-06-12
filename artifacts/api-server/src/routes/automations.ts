@@ -101,21 +101,35 @@ router.post("/automations/rules/:id/test", requireAuth, requireRole("super_admin
     const subject = template.subject.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
     const body = template.bodyHtml.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
 
-    const { Resend } = await import("resend");
-    const resend = process.env.RESEND_API_KEY ? new (Resend as any)(process.env.RESEND_API_KEY) : null;
-    const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "hr@technovasolutions.com";
+    const token = process.env.ZEPTOMAIL_API_KEY ?? "";
+    const zeptoUrl = process.env.ZEPTOMAIL_URL ?? "https://api.zeptomail.in/v1.1/email";
+    const fromEmail = process.env.FROM_EMAIL ?? "hr@appunik.com";
+    const fromName  = process.env.FROM_NAME  ?? "Appunik HR";
 
-    if (!resend) {
-      res.json({ sent: false, reason: "RESEND_API_KEY not configured", subject, preview: body.slice(0, 200) });
+    if (!token) {
+      res.json({ sent: false, reason: "ZEPTOMAIL_API_KEY not configured", subject, preview: body.slice(0, 200) });
       return;
     }
 
-    await (resend as any).emails.send({
-      from: FROM_EMAIL,
-      to: [testEmail],
-      subject: `[TEST] ${subject}`,
-      html: `<div style="font-family:Inter,sans-serif;max-width:600px;margin:auto">${body.replace(/\n/g, "<br>")}</div>`,
+    const zRes = await fetch(zeptoUrl, {
+      method: "POST",
+      headers: {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authorization": `Zoho-enczapikey ${token}`,
+      },
+      body: JSON.stringify({
+        from: { address: fromEmail, name: fromName },
+        to: [{ email_address: { address: testEmail, name: "Test User" } }],
+        subject: `[TEST] ${subject}`,
+        htmlbody: `<div style="font-family:Inter,sans-serif;max-width:600px;margin:auto">${body.replace(/\n/g, "<br>")}</div>`,
+      }),
     });
+
+    if (!zRes.ok) {
+      const text = await zRes.text().catch(() => zRes.statusText);
+      throw new Error(`ZeptoMail error ${zRes.status}: ${text}`);
+    }
 
     res.json({ sent: true, to: testEmail, subject: `[TEST] ${subject}` });
   } catch (e) {
