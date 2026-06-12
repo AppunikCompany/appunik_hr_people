@@ -32,6 +32,97 @@ router.get("/automations/rules", requireAuth, async (_req, res) => {
   }
 });
 
+router.post("/automations/rules", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const { name, code, triggerType, triggerEvent, cronExpr, templateId, recipients } = req.body as {
+      name: string; code: string; triggerType: string; triggerEvent?: string;
+      cronExpr?: string; templateId: string; recipients: string;
+    };
+    if (!name || !code || !triggerType || !templateId || !recipients) {
+      res.status(400).json({ error: "name, code, triggerType, templateId, and recipients are required" }); return;
+    }
+    const id = crypto.randomUUID();
+    await db.insert(automationRulesTable).values({ id, name, code, triggerType, triggerEvent: triggerEvent || null, cronExpr: cronExpr || null, templateId, recipients });
+    const [rule] = await db.select().from(automationRulesTable).where(eq(automationRulesTable.id, id));
+    const [tmpl] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.id, templateId));
+    res.status(201).json({ ...rule, templateName: tmpl?.name ?? "" });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.patch("/automations/rules/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const { name, triggerType, triggerEvent, cronExpr, templateId, recipients } = req.body as {
+      name?: string; triggerType?: string; triggerEvent?: string;
+      cronExpr?: string; templateId?: string; recipients?: string;
+    };
+    await db.update(automationRulesTable)
+      .set({ ...(name && { name }), ...(triggerType && { triggerType }), triggerEvent: triggerEvent || null, cronExpr: cronExpr || null, ...(templateId && { templateId }), ...(recipients && { recipients }) })
+      .where(eq(automationRulesTable.id, req.params.id as string));
+    const [rule] = await db.select().from(automationRulesTable).where(eq(automationRulesTable.id, req.params.id as string));
+    if (!rule) { res.status(404).json({ error: "Not found" }); return; }
+    const [tmpl] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.id, rule.templateId));
+    res.json({ ...rule, templateName: tmpl?.name ?? "" });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.delete("/automations/rules/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    await db.delete(automationRulesTable).where(eq(automationRulesTable.id, req.params.id as string));
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.post("/automations/rules/:id/test", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const { testEmail } = req.body as { testEmail: string };
+    if (!testEmail) { res.status(400).json({ error: "testEmail is required" }); return; }
+    const [rule] = await db.select().from(automationRulesTable).where(eq(automationRulesTable.id, req.params.id as string));
+    if (!rule) { res.status(404).json({ error: "Rule not found" }); return; }
+    const [template] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.id, rule.templateId));
+    if (!template) { res.status(404).json({ error: "Template not found" }); return; }
+
+    const vars: Record<string, string> = {
+      firstName: "Test", lastName: "User", fullName: "Test User",
+      email: testEmail, employeeCode: "EMP001",
+      startDate: new Date().toISOString().split("T")[0],
+      endDate: new Date().toISOString().split("T")[0],
+      years: "3", daysRemaining: "7", kraTitle: "Sample KRA",
+      documentType: "ID Proof", expiryDate: "2026-12-31",
+      holidayList: "2026-08-15 — Independence Day (national)",
+      monthName: "August",
+    };
+
+    const subject = template.subject.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
+    const body = template.bodyHtml.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
+
+    const { Resend } = await import("resend");
+    const resend = process.env.RESEND_API_KEY ? new (Resend as any)(process.env.RESEND_API_KEY) : null;
+    const FROM_EMAIL = process.env.RESEND_FROM_EMAIL ?? "hr@technovasolutions.com";
+
+    if (!resend) {
+      res.json({ sent: false, reason: "RESEND_API_KEY not configured", subject, preview: body.slice(0, 200) });
+      return;
+    }
+
+    await (resend as any).emails.send({
+      from: FROM_EMAIL,
+      to: [testEmail],
+      subject: `[TEST] ${subject}`,
+      html: `<div style="font-family:Inter,sans-serif;max-width:600px;margin:auto">${body.replace(/\n/g, "<br>")}</div>`,
+    });
+
+    res.json({ sent: true, to: testEmail, subject: `[TEST] ${subject}` });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 router.post("/automations/rules/:id/toggle", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const { isActive } = req.body as { isActive: boolean };

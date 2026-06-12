@@ -287,22 +287,29 @@ export interface OnboardingChecklist {
 export interface AutomationRule {
   id: string;
   name: string;
-  triggerEvent: string;
+  code: string;
+  triggerType: string;
+  triggerEvent: string | null;
+  cronExpr: string | null;
   templateId: string;
+  templateName?: string;
   recipients: string;
   isActive: boolean;
-  description?: string | null;
+  lastRunAt?: string | null;
+  createdAt?: string;
 }
 
 export interface AutomationLog {
   id: string;
   ruleId: string;
-  employeeId: string;
+  ruleName?: string;
+  employeeId: string | null;
+  employeeName?: string | null;
   templateCode: string;
   recipientEmail: string;
   status: string;
   errorMessage?: string | null;
-  createdAt: string;
+  sentAt: string;
 }
 
 export interface EmailTemplate {
@@ -312,6 +319,7 @@ export interface EmailTemplate {
   subject: string;
   bodyHtml: string;
   variables?: string[] | null;
+  isActive?: boolean;
 }
 
 export interface CompanyProfile {
