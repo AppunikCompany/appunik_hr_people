@@ -538,12 +538,14 @@ router.post("/attendance/regularization", requireAuth, async (req, res): Promise
     if (!reason || !reason.trim()) { res.status(400).json({ error: "Reason is required" }); return; }
 
     const id = crypto.randomUUID();
+    // Times entered by the user are in IST — force +05:30 so Node (UTC) stores them correctly
+    const toIST = (t: string) => new Date(`${date}T${t.slice(0, 5)}:00+05:30`);
     await db.insert(attendanceRegularizationsTable).values({
       id,
       employeeId,
       date,
-      requestedClockIn: requestedClockIn ? new Date(`${date}T${requestedClockIn}`) : null,
-      requestedClockOut: requestedClockOut ? new Date(`${date}T${requestedClockOut}`) : null,
+      requestedClockIn: requestedClockIn ? toIST(requestedClockIn) : null,
+      requestedClockOut: requestedClockOut ? toIST(requestedClockOut) : null,
       reason: reason.trim(),
       status: "pending",
     });
