@@ -74,8 +74,11 @@ router.get("/reports/attendance", requireAuth, requireRole("super_admin", "hr_ad
 
     // Count Mon–Fri working days in the month, capped at today for the current month
     function workingDaysInMonth(month: number, year: number): number {
-      const today = new Date();
-      const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const todayISTStr = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+      }).format(new Date());
+      const [ty, tm, td] = todayISTStr.split("-").map(Number);
+      const todayDateOnly = new Date(ty, tm - 1, td);
       let count = 0;
       const daysInMonth = new Date(year, month, 0).getDate();
       for (let day = 1; day <= daysInMonth; day++) {

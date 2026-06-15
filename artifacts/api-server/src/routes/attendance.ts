@@ -22,6 +22,15 @@ const router: IRouter = Router();
 // ── Working-hours window: 8:00 AM – 10:00 PM (IST) ───────────────────────────
 // Railway servers run in UTC — use Intl to get the correct local hour in IST.
 const COMPANY_TIMEZONE = "Asia/Kolkata";
+
+/** Returns the current date in IST as YYYY-MM-DD. */
+function todayIST(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: COMPANY_TIMEZONE,
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+}
+
 function isWithinWorkingHours(): boolean {
   const h = parseInt(
     new Intl.DateTimeFormat("en-US", { timeZone: COMPANY_TIMEZONE, hour: "numeric", hour12: false }).format(new Date()),
@@ -41,7 +50,7 @@ router.post("/attendance/clock-in", requireAuth, async (req, res): Promise<void>
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayIST();
     const [existing] = await db
       .select()
       .from(attendanceRecordsTable)
@@ -80,7 +89,7 @@ router.post("/attendance/clock-out", requireAuth, async (req, res): Promise<void
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayIST();
     const [existing] = await db
       .select()
       .from(attendanceRecordsTable)
@@ -140,7 +149,7 @@ router.post("/attendance/wfh", requireAuth, async (req, res): Promise<void> => {
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayIST();
     const existing = await db
       .select()
       .from(attendanceRecordsTable)
@@ -181,7 +190,7 @@ router.get("/attendance/today", requireAuth, async (req, res): Promise<void> => 
     const clientId = req.query.employeeId as string | undefined;
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayIST();
     const [record] = await db
       .select()
       .from(attendanceRecordsTable)
@@ -228,7 +237,7 @@ router.post("/attendance/break-start", requireAuth, async (req, res): Promise<vo
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayIST();
 
     // Must be clocked in today
     const [record] = await db
@@ -269,7 +278,7 @@ router.post("/attendance/break-end", requireAuth, async (req, res): Promise<void
     const employeeId = await resolveEmployeeId(req, res, clientId);
     if (!employeeId) return;
 
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayIST();
 
     const [record] = await db
       .select()
@@ -326,7 +335,7 @@ router.get("/attendance/monthly", requireAuth, async (req, res) => {
 
 router.get("/attendance/team", requireAuth, async (req, res) => {
   try {
-    const today = new Date().toISOString().split("T")[0];
+    const today = todayIST();
     const role = req.user?.role ?? "employee";
 
     let employeeList;

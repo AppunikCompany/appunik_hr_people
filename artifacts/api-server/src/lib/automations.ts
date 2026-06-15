@@ -228,7 +228,9 @@ export async function runScheduledAutomations(ctx: ScheduledJobContext): Promise
   // attendance.absent_no_leave: fire for employees with no attendance record yesterday and no approved leave covering yesterday
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  const yesterdayStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(yesterday);
   const dayOfWeek = yesterday.getDay();
   if (dayOfWeek !== 0 && dayOfWeek !== 6) {
     const attendedYesterday = await db
@@ -264,7 +266,9 @@ export async function runScheduledAutomations(ctx: ScheduledJobContext): Promise
   // kra.deadline_approaching: fire for assignments with open review cycles closing in 7 days
   const in7days = new Date(today);
   in7days.setDate(in7days.getDate() + 7);
-  const in7daysStr = in7days.toISOString().split("T")[0];
+  const in7daysStr = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(in7days);
   const closingCycles = await db
     .select()
     .from(reviewCyclesTable)

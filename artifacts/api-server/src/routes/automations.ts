@@ -17,6 +17,10 @@ import { runScheduledAutomations, fireAutomationEvent } from "../lib/automations
 
 const router: IRouter = Router();
 
+const todayIST = () => new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+}).format(new Date());
+
 router.get("/automations/rules", requireAuth, async (_req, res) => {
   try {
     const rules = await db.select().from(automationRulesTable);
@@ -90,8 +94,8 @@ router.post("/automations/rules/:id/test", requireAuth, requireRole("super_admin
     const vars: Record<string, string> = {
       firstName: "Test", lastName: "User", fullName: "Test User",
       email: testEmail, employeeCode: "EMP001",
-      startDate: new Date().toISOString().split("T")[0],
-      endDate: new Date().toISOString().split("T")[0],
+      startDate: todayIST(),
+      endDate: todayIST(),
       years: "3", daysRemaining: "7", kraTitle: "Sample KRA",
       documentType: "ID Proof", expiryDate: "2026-12-31",
       holidayList: "2026-08-15 — Independence Day (national)",
@@ -243,7 +247,7 @@ router.patch("/automations/email-templates/:id", requireAuth, requireRole("super
 
 router.post("/automations/run-scheduled", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const today = (req.query.date as string) ?? new Date().toISOString().split("T")[0];
+    const today = (req.query.date as string) ?? todayIST();
     await runScheduledAutomations({ today });
     res.json({ success: true, date: today });
   } catch (e) {
@@ -337,11 +341,12 @@ router.post("/automations/seed-templates", requireAuth, requireRole("super_admin
 router.post("/automations/check-document-expiry", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const daysAhead = parseInt((req.query.days as string) ?? "30");
-    const today = new Date();
-    const cutoff = new Date(today);
-    cutoff.setDate(cutoff.getDate() + daysAhead);
-    const cutoffStr = cutoff.toISOString().split("T")[0];
-    const todayStr = today.toISOString().split("T")[0];
+    const todayStr = todayIST();
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() + daysAhead);
+    const cutoffStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(cutoffDate);
 
     const allDocs = await db.select().from(employeeDocumentsTable);
     const expiring = allDocs.filter((d) => d.expiryDate && d.expiryDate >= todayStr && d.expiryDate <= cutoffStr);
@@ -365,7 +370,7 @@ router.post("/automations/check-document-expiry", requireAuth, requireRole("supe
 // ── AU-18: Attendance regularization (daily check for missed punches) ──
 router.post("/automations/attendance-regularization", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
-    const dateStr = (req.query.date as string) ?? new Date().toISOString().split("T")[0];
+    const dateStr = (req.query.date as string) ?? todayIST();
     const checkDate = new Date(dateStr);
     const dayOfWeek = checkDate.getDay();
 
