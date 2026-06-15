@@ -17,7 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { formatDateTime } from "@/lib/utils";
-import { Edit, Plus, Trash2, SendHorizonal, Zap, Mail, Clock, Info } from "lucide-react";
+import { Edit, Plus, Trash2, SendHorizonal, Zap, Mail, Clock, Info, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -482,6 +483,11 @@ export default function Automations() {
   const { data: rules = [], isLoading: rulesLoading } = useAutomationRules();
   const { data: logs = [], isLoading: logsLoading } = useAutomationLogs();
   const { data: templates = [] } = useEmailTemplates();
+  const { data: emailConfig, isLoading: configLoading } = useQuery({
+    queryKey: ["email-config"],
+    queryFn: () => fetchApi<{ configured: boolean; fromEmail: string; apiUrl: string; error?: string; probeStatus?: number }>("/automations/email-config"),
+    staleTime: 30_000,
+  });
   const qc = useQueryClient();
 
   const tabFromPath: Record<string, string> = {
@@ -525,8 +531,27 @@ export default function Automations() {
       <PageHeader
         title="Email Automations"
         breadcrumbs={[{ label: "Automations" }]}
-        subtitle="Build triggered emails for key HR events — sent automatically via Resend"
+        subtitle="Build triggered emails for key HR events — sent automatically via ZeptoMail"
       />
+
+      {/* ZeptoMail config status banner */}
+      {configLoading ? null : emailConfig?.configured ? (
+        <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm">
+          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+          <span>ZeptoMail connected — sending from <strong>{emailConfig.fromEmail}</strong></span>
+        </div>
+      ) : (
+        <div className="flex items-start gap-2 mb-4 px-3 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-sm">
+          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="font-medium">ZeptoMail not connected — emails will not send</p>
+            {emailConfig?.error && <p className="text-xs mt-0.5 text-amber-700">{emailConfig.error}</p>}
+            <p className="text-xs mt-1 text-amber-700">
+              Add <code className="bg-amber-100 px-1 rounded">ZEPTOMAIL_API_KEY</code> (Send Mail Token) and <code className="bg-amber-100 px-1 rounded">FROM_EMAIL</code> to your Railway environment variables, then redeploy.
+            </p>
+          </div>
+        </div>
+      )}
 
       <Tabs value={activeTab} onValueChange={(v) => navigate(pathFromTab[v] ?? "/automations")}>
         <TabsList className="mb-4">

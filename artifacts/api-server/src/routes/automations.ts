@@ -176,6 +176,40 @@ router.get("/automations/logs", requireAuth, async (req, res) => {
   }
 });
 
+router.get("/automations/email-config", requireAuth, requireRole("super_admin", "hr_admin"), async (_req, res) => {
+  const keySet = Boolean(process.env.ZEPTOMAIL_API_KEY);
+  const fromEmail = process.env.FROM_EMAIL ?? "hr@appunik.com";
+  const apiUrl = process.env.ZEPTOMAIL_URL ?? "https://api.zeptomail.in/v1.1/email";
+
+  if (!keySet) {
+    res.json({ configured: false, fromEmail, apiUrl, error: "ZEPTOMAIL_API_KEY is not set in environment variables" });
+    return;
+  }
+
+  // Quick connectivity check — send a minimal request with an invalid body to see if auth works
+  // ZeptoMail returns 401 if the token is wrong, 400 if it's right but body is malformed
+  try {
+    const probe = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "authorization": `Zoho-enczapikey ${process.env.ZEPTOMAIL_API_KEY}`,
+      },
+      body: JSON.stringify({}), // intentionally minimal — tells us auth status
+    });
+    const probeText = await probe.text().catch(() => "");
+    if (probe.status === 401 || probe.status === 403) {
+      res.json({ configured: false, fromEmail, apiUrl, error: `Authentication failed (${probe.status}): ${probeText}. Check that ZEPTOMAIL_API_KEY is the Send Mail Token from ZeptoMail → Mail Agents → your agent → Send Mail Token tab.` });
+    } else {
+      // 400 = auth OK, body invalid (expected). 200 unlikely with empty body.
+      res.json({ configured: true, fromEmail, apiUrl, probeStatus: probe.status });
+    }
+  } catch (e) {
+    res.json({ configured: false, fromEmail, apiUrl, error: `Network error reaching ZeptoMail: ${String(e)}` });
+  }
+});
+
 router.get("/automations/email-templates", requireAuth, async (_req, res) => {
   try {
     const templates = await db.select().from(emailTemplatesTable);
