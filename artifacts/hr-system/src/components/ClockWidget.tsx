@@ -218,6 +218,40 @@ export function ClockWidget({ record, compact = false }: Props) {
   }
 
   // ── WFH ─────────────────────────────────────────────────────────────────────
+  // ── WFH: currently on a break (Away) ────────────────────────────────────────
+  if (record.type === "wfh" && record.isOnBreak) {
+    const totalSoFar = (record.totalBreakMinutes ?? 0) + breakElapsed / 60;
+    return (
+      <div className="bg-white border border-amber-200 rounded-xl p-5 shadow-md">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Today's Attendance</span>
+          <span className="flex items-center gap-1.5 text-xs font-medium text-amber-600">
+            <Coffee className="w-3.5 h-3.5" />
+            Away · WFH
+          </span>
+        </div>
+        <p className={`font-mono font-semibold text-amber-600 ${compact ? "text-2xl" : "text-3xl"} tracking-tight`}>
+          {formatHMS(breakElapsed)}
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5 mb-3">
+          Away since {time(record.currentBreakStart!)}
+          {record.totalBreakMinutes ? ` · Total away today: ${formatMinutes(totalSoFar)}` : ""}
+        </p>
+        <Button
+          size="sm"
+          onClick={() => backMut.mutate()}
+          disabled={backMut.isPending}
+          className="w-full bg-amber-500 hover:bg-amber-600 text-white border-0"
+        >
+          <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+          I'm Back
+        </Button>
+        <BreakHistory breaks={record.breaks} isOnBreak={record.isOnBreak} currentBreakStart={record.currentBreakStart} />
+      </div>
+    );
+  }
+
+  // ── WFH: active (not on break) ───────────────────────────────────────────────
   if (record.type === "wfh") {
     return (
       <div className="bg-white border border-blue-200 rounded-xl p-5 shadow-md">
@@ -226,7 +260,23 @@ export function ClockWidget({ record, compact = false }: Props) {
           <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">WFH</span>
         </div>
         <p className={`font-semibold text-blue-600 ${compact ? "text-xl" : "text-lg"}`}>Working From Home</p>
-        <p className="text-xs text-muted-foreground mt-1">Have a productive day!</p>
+        <p className="text-xs text-muted-foreground mt-1 mb-3">
+          Have a productive day!
+          {record.totalBreakMinutes ? ` · Away: ${formatMinutes(record.totalBreakMinutes)}` : ""}
+        </p>
+        {withinHours && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => awayMut.mutate()}
+            disabled={awayMut.isPending}
+            className="w-full"
+          >
+            <Coffee className="w-3.5 h-3.5 mr-1.5" />
+            Away & Back
+          </Button>
+        )}
+        <BreakHistory breaks={record.breaks} isOnBreak={false} />
       </div>
     );
   }
