@@ -157,7 +157,9 @@ router.post("/attendance/wfh", requireAuth, async (req, res): Promise<void> => {
 
     const wfhId = crypto.randomUUID();
     const wfhType = needsApproval ? "wfh_pending" : "wfh";
-    await db.insert(attendanceRecordsTable).values({ id: wfhId, employeeId, date: today, type: wfhType, isLate: false, isHalfDay: false, notes });
+    // Standard WFH day = 8 hours (no clock-in/out tracking for WFH)
+    const wfhHours = 8.0;
+    await db.insert(attendanceRecordsTable).values({ id: wfhId, employeeId, date: today, type: wfhType, isLate: false, isHalfDay: false, notes, hoursWorked: wfhHours });
     const [record] = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, wfhId));
 
     if (needsApproval) {
@@ -476,7 +478,7 @@ router.post("/attendance/wfh/:id/approve", requireAuth, requireRole("super_admin
     if (record.type !== "wfh_pending") { res.status(400).json({ error: "Record is not pending WFH approval" }); return; }
 
     if (approved) {
-      await db.update(attendanceRecordsTable).set({ type: "wfh" }).where(eq(attendanceRecordsTable.id, recordId));
+      await db.update(attendanceRecordsTable).set({ type: "wfh", hoursWorked: 8.0 }).where(eq(attendanceRecordsTable.id, recordId));
     } else {
       await db.delete(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, recordId));
     }
@@ -736,6 +738,26 @@ export async function autoClockOutMissed(): Promise<void> {
     }
 
     console.log(`[auto-clockout] ${todayIST}: auto-clocked out ${closed}/${openRecords.length} employees at 22:00 IST`);
+
+    // Retroactively set hoursWorked for any WFH records today that are missing it
+    const wfhWithoutHours = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(
+        and(
+          eq(attendanceRecordsTable.date, todayIST),
+          eq(attendanceRecordsTable.type, "wfh"),
+          isNull(attendanceRecordsTable.hoursWorked),
+        ),
+      );
+    if (wfhWithoutHours.length > 0) {
+      for (const r of wfhWithoutHours) {
+        await db.update(attendanceRecordsTable)
+          .set({ hoursWorked: 8.0 })
+          .where(eq(attendanceRecordsTable.id, r.id));
+      }
+      console.log(`[auto-clockout] ${todayIST}: set 8h for ${wfhWithoutHours.length} WFH record(s) missing hours`);
+    }
   } catch (err) {
     console.error("[auto-clockout] Job failed:", err);
   }
