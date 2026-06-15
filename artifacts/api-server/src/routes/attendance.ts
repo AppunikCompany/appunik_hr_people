@@ -121,9 +121,13 @@ router.post("/attendance/clock-out", requireAuth, async (req, res): Promise<void
     }, 0);
 
     const clockOut = new Date();
-    const rawMs = existing.clockIn
-      ? clockOut.getTime() - new Date(existing.clockIn).getTime()
-      : 0;
+    // WFH records have no clockIn — use record creation time as the start
+    const startTime = existing.clockIn
+      ? new Date(existing.clockIn)
+      : existing.createdAt
+        ? new Date(existing.createdAt)
+        : clockOut;
+    const rawMs = clockOut.getTime() - startTime.getTime();
     const netMs = Math.max(0, rawMs - totalBreakMs);
     const hoursWorked = netMs / 3600000;
     const isHalfDay = hoursWorked < 4;

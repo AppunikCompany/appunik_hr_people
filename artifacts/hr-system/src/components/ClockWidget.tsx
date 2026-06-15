@@ -251,13 +251,37 @@ export function ClockWidget({ record, compact = false }: Props) {
     );
   }
 
+  // ── WFH: checked out — day summary ─────────────────────────────────────────
+  if (record.type === "wfh" && record.clockOut) {
+    return (
+      <div className="bg-white border border-border rounded-xl p-5 shadow-md">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Today's Attendance</span>
+          <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">Done · WFH</span>
+        </div>
+        <p className={`font-semibold text-foreground ${compact ? "text-xl" : "text-lg"}`}>
+          {record.hoursWorked != null ? `${record.hoursWorked.toFixed(1)}h worked` : "Day complete"}
+        </p>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          Checked out at {time(record.clockOut)}
+          {record.isHalfDay ? " · Half day" : ""}
+          {record.totalBreakMinutes ? ` · Away: ${formatMinutes(record.totalBreakMinutes)}` : ""}
+        </p>
+        <BreakHistory breaks={record.breaks} isOnBreak={false} />
+      </div>
+    );
+  }
+
   // ── WFH: active (not on break) ───────────────────────────────────────────────
   if (record.type === "wfh") {
     return (
       <div className="bg-white border border-blue-200 rounded-xl p-5 shadow-md">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Today's Attendance</span>
-          <span className="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">WFH</span>
+          <span className="flex items-center gap-1.5 text-xs font-medium text-blue-600">
+            <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+            WFH
+          </span>
         </div>
         <p className={`font-semibold text-blue-600 ${compact ? "text-xl" : "text-lg"}`}>Working From Home</p>
         <p className="text-xs text-muted-foreground mt-1 mb-3">
@@ -265,16 +289,28 @@ export function ClockWidget({ record, compact = false }: Props) {
           {record.totalBreakMinutes ? ` · Away: ${formatMinutes(record.totalBreakMinutes)}` : ""}
         </p>
         {withinHours && (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => awayMut.mutate()}
-            disabled={awayMut.isPending}
-            className="w-full"
-          >
-            <Coffee className="w-3.5 h-3.5 mr-1.5" />
-            Away & Back
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => awayMut.mutate()}
+              disabled={awayMut.isPending}
+              className="flex-1 text-amber-600 hover:text-amber-700 border-amber-200 hover:bg-amber-50"
+            >
+              <Coffee className="w-3.5 h-3.5 mr-1.5" />
+              Away
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => clockOutMut.mutate()}
+              disabled={clockOutMut.isPending}
+              className="flex-1 text-red-500 hover:text-red-600 border-red-200 hover:bg-red-50"
+            >
+              <LogOut className="w-3.5 h-3.5 mr-1.5" />
+              Check Out
+            </Button>
+          </div>
         )}
         <BreakHistory breaks={record.breaks} isOnBreak={false} />
       </div>
