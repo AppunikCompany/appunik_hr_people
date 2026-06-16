@@ -245,6 +245,24 @@ router.patch("/automations/email-templates/:id", requireAuth, requireRole("super
   }
 });
 
+router.post("/automations/trigger-notifications", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  const { type } = req.query as { type?: string };
+  try {
+    const { notifyForgottenClockIn, notifyForgottenClockOut } = await import("../lib/scheduledNotifications");
+    if (type === "clock_in") {
+      await notifyForgottenClockIn();
+      res.json({ triggered: "clock_in_reminder" });
+    } else if (type === "clock_out") {
+      await notifyForgottenClockOut();
+      res.json({ triggered: "clock_out_reminder" });
+    } else {
+      res.status(400).json({ error: "type must be clock_in or clock_out" });
+    }
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 router.post("/automations/run-scheduled", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {
     const today = (req.query.date as string) ?? todayIST();
