@@ -50,6 +50,7 @@ type EmployeeForm = {
   lastName: string;
   email: string;
   phone: string;
+  workLocation: string;
   departmentId: string;
   designationId: string;
   joiningDate: string;
@@ -74,6 +75,7 @@ function EmployeeFormDialog({
     lastName: initial?.lastName ?? "",
     email: initial?.email ?? "",
     phone: initial?.phone ?? "",
+    workLocation: (initial as any)?.workLocation ?? "",
     departmentId: initial?.departmentId ?? "",
     designationId: initial?.designationId ?? "",
     joiningDate: initial?.joiningDate ?? new Date().toISOString().split("T")[0],
@@ -122,6 +124,10 @@ function EmployeeFormDialog({
           <div>
             <Label>Phone</Label>
             <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} className="mt-1" />
+          </div>
+          <div>
+            <Label>Work Location</Label>
+            <Input placeholder="e.g. Mumbai Office, Remote" value={form.workLocation} onChange={(e) => set("workLocation", e.target.value)} className="mt-1" />
           </div>
           <div>
             <Label>Employment Type *</Label>

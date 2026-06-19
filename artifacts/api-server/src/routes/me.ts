@@ -30,12 +30,13 @@ router.get("/me/onboarding-status", requireAuth, async (req, res): Promise<void>
 router.patch("/me/personal-details", requireAuth, async (req, res): Promise<void> => {
   try {
     const userId = req.user!.id;
-    const { phone, gender, dateOfBirth, address, emergencyContact, emergencyPhone } = req.body as {
-      phone?: string; gender?: string; dateOfBirth?: string;
-      address?: string; emergencyContact?: string; emergencyPhone?: string;
+    const { phone, workPhone, personalEmail, gender, dateOfBirth, maritalStatus, address, currentLocation, emergencyContact, emergencyPhone } = req.body as {
+      phone?: string; workPhone?: string; personalEmail?: string; gender?: string;
+      dateOfBirth?: string; maritalStatus?: string; address?: string;
+      currentLocation?: string; emergencyContact?: string; emergencyPhone?: string;
     };
     await db.update(employeesTable)
-      .set({ phone, gender, dateOfBirth, address, emergencyContact, emergencyPhone })
+      .set({ phone, workPhone, personalEmail, gender, dateOfBirth, maritalStatus, address, currentLocation, emergencyContact, emergencyPhone })
       .where(eq(employeesTable.userId, userId));
     res.json({ ok: true });
   } catch (e) {

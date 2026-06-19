@@ -69,7 +69,11 @@ function StepIndicator({ current }: { current: number }) {
 }
 
 function PersonalDetailsStep({ onNext }: { onNext: () => void }) {
-  const [form, setForm] = useState({ phone: "", gender: "", dateOfBirth: "", address: "", emergencyContact: "", emergencyPhone: "" });
+  const [form, setForm] = useState({
+    phone: "", gender: "", dateOfBirth: "", maritalStatus: "",
+    personalEmail: "", currentLocation: "", address: "",
+    emergencyContact: "", emergencyPhone: "",
+  });
   const mut = useMutation({
     mutationFn: () => fetchApi("/me/personal-details", { method: "PATCH", body: JSON.stringify(form) }),
     onSuccess: onNext,
@@ -85,7 +89,7 @@ function PersonalDetailsStep({ onNext }: { onNext: () => void }) {
       <p className="text-sm text-muted-foreground">Help us complete your profile.</p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="space-y-1">
-          <label className="text-sm font-medium">Phone Number</label>
+          <label className="text-sm font-medium">Mobile Number</label>
           <Input placeholder="+91 98765 43210" value={form.phone} onChange={set("phone")} />
         </div>
         <div className="space-y-1">
@@ -102,16 +106,34 @@ function PersonalDetailsStep({ onNext }: { onNext: () => void }) {
           <Input type="date" value={form.dateOfBirth} onChange={set("dateOfBirth")} />
         </div>
         <div className="space-y-1">
+          <label className="text-sm font-medium">Marital Status</label>
+          <select className="w-full border rounded-md px-3 py-2 text-sm bg-background" value={form.maritalStatus} onChange={set("maritalStatus")}>
+            <option value="">Select</option>
+            <option value="single">Single</option>
+            <option value="married">Married</option>
+            <option value="divorced">Divorced</option>
+            <option value="widowed">Widowed</option>
+          </select>
+        </div>
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-sm font-medium">Personal Email</label>
+          <Input type="email" placeholder="your.personal@email.com" value={form.personalEmail} onChange={set("personalEmail")} />
+        </div>
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-sm font-medium">Current Location</label>
+          <Input placeholder="City, State (where you currently live)" value={form.currentLocation} onChange={set("currentLocation")} />
+        </div>
+        <div className="space-y-1 sm:col-span-2">
+          <label className="text-sm font-medium">Permanent Address</label>
+          <Textarea placeholder="Your full permanent address" rows={2} value={form.address} onChange={set("address")} />
+        </div>
+        <div className="space-y-1">
           <label className="text-sm font-medium">Emergency Contact Name</label>
           <Input placeholder="Full name" value={form.emergencyContact} onChange={set("emergencyContact")} />
         </div>
-        <div className="space-y-1 sm:col-span-2">
+        <div className="space-y-1">
           <label className="text-sm font-medium">Emergency Contact Phone</label>
           <Input placeholder="+91 98765 43210" value={form.emergencyPhone} onChange={set("emergencyPhone")} />
-        </div>
-        <div className="space-y-1 sm:col-span-2">
-          <label className="text-sm font-medium">Address</label>
-          <Textarea placeholder="Your full address" rows={3} value={form.address} onChange={set("address")} />
         </div>
       </div>
       <div className="flex justify-end pt-2">

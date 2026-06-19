@@ -4,6 +4,9 @@ import {
   employeesTable,
   employeeDocumentsTable,
   employeeHistoryTable,
+  employeeExperienceTable,
+  employeeEducationTable,
+  exitRequestsTable,
   departmentsTable,
   designationsTable,
   leaveBalancesTable,
@@ -360,6 +363,35 @@ router.post("/employees/:id/history", requireAuth, requireRole("super_admin", "h
     await db.insert(employeeHistoryTable).values({ ...req.body, id: histId, employeeId: (req.params.id as string) });
     const [entry] = await db.select().from(employeeHistoryTable).where(eq(employeeHistoryTable.id, histId));
     res.status(201).json(entry);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.get("/employees/:id/experience", requireAuth, async (req, res): Promise<void> => {
+  try {
+    if (!(await canReadEmployee(req, res, req.params.id as string))) return;
+    const rows = await db.select().from(employeeExperienceTable).where(eq(employeeExperienceTable.employeeId, req.params.id as string));
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.get("/employees/:id/education", requireAuth, async (req, res): Promise<void> => {
+  try {
+    if (!(await canReadEmployee(req, res, req.params.id as string))) return;
+    const rows = await db.select().from(employeeEducationTable).where(eq(employeeEducationTable.employeeId, req.params.id as string));
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.get("/employees/:id/exit", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const [row] = await db.select().from(exitRequestsTable).where(eq(exitRequestsTable.employeeId, req.params.id as string));
+    res.json(row ?? null);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
