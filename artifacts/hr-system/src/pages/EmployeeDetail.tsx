@@ -264,7 +264,6 @@ export default function EmployeeDetail() {
                 <Detail label="Status" value={<StatusBadge status={emp.status} />} />
                 {emp.lastWorkingDay && <Detail label="Last Working Day" value={formatDate(emp.lastWorkingDay)} />}
                 {emp.resignationDate && <Detail label="Resignation Date" value={formatDate(emp.resignationDate)} />}
-                {(emp as any).dateOfExit && <Detail label="Date of Exit" value={formatDate((emp as any).dateOfExit)} />}
               </div>
             </Section>
           </div>
@@ -584,7 +583,6 @@ export default function EmployeeDetail() {
                 <div><Label>Probation End Date</Label><Input type="date" max="9999-12-31" value={editForm.probationEndDate ?? ""} onChange={e => setEdit("probationEndDate", e.target.value)} className="mt-1" /></div>
                 <div><Label>Resignation Date</Label><Input type="date" max="9999-12-31" value={editForm.resignationDate ?? ""} onChange={e => setEdit("resignationDate", e.target.value)} className="mt-1" /></div>
                 <div><Label>Last Working Day</Label><Input type="date" max="9999-12-31" value={editForm.lastWorkingDay ?? ""} onChange={e => setEdit("lastWorkingDay", e.target.value)} className="mt-1" /></div>
-                <div><Label>Date of Exit</Label><Input type="date" max="9999-12-31" value={editForm.dateOfExit ?? ""} onChange={e => setEdit("dateOfExit", e.target.value)} className="mt-1" /></div>
               </div>
             </FormSection>
 
