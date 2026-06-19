@@ -3,26 +3,47 @@ import { useQuery } from "@tanstack/react-query";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate } from "@/lib/utils";
-import { User, Mail, Phone, Briefcase, Calendar, Shield } from "lucide-react";
+import { Mail, Phone, Briefcase, Calendar, Shield, MapPin, User } from "lucide-react";
 
 function formatEnum(val: string | null | undefined): string {
   if (!val) return "—";
   return val.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+function Field({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="flex flex-col py-2 border-b border-secondary last:border-0">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="text-sm font-medium text-foreground mt-0.5">{value || "—"}</dd>
+    </div>
+  );
+}
+
+function SectionCard({ icon: Icon, title, children }: { icon: any; title: string; children: React.ReactNode }) {
+  return (
+    <div className="bg-white border border-border rounded-lg shadow-sm p-6">
+      <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+        <Icon className="w-4 h-4 text-muted-foreground" /> {title}
+      </h3>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">{children}</dl>
+    </div>
+  );
+}
+
 export default function Profile() {
   const { data: user } = useCurrentUser();
+  const empId = user?.employeeId;
 
   const { data: profile } = useQuery({
-    queryKey: ["self-profile", user?.id],
-    queryFn: () => fetchApi<Record<string, any>>(`/self-service/profile/${user?.id}`),
-    enabled: !!user?.id,
+    queryKey: ["self-profile", empId],
+    queryFn: () => fetchApi<Record<string, any>>(`/self-service/profile/${empId}`),
+    enabled: !!empId,
   });
 
   const { data: leaveSummary } = useQuery({
-    queryKey: ["self-leave", user?.id, new Date().getFullYear()],
-    queryFn: () => fetchApi<{ balances: any[]; recentRequests: any[] }>(`/self-service/leave-summary/${user?.id}?year=${new Date().getFullYear()}`),
-    enabled: !!user?.id,
+    queryKey: ["self-leave", empId, new Date().getFullYear()],
+    queryFn: () => fetchApi<{ balances: any[]; recentRequests: any[] }>(`/self-service/leave-summary/${empId}?year=${new Date().getFullYear()}`),
+    enabled: !!empId,
   });
 
   return (
@@ -40,13 +61,11 @@ export default function Profile() {
             {(user?.firstName ?? "?")?.[0]}{(user?.lastName ?? "")?.[0]}
           </div>
           <h2 className="text-lg font-semibold text-foreground">{user?.firstName} {user?.lastName}</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">{profile?.designationName ?? user?.role ?? "—"}</p>
+          <p className="text-sm text-muted-foreground mt-0.5">{profile?.designationName ?? formatEnum(user?.role)}</p>
           {profile?.status && (
-            <div className="mt-3">
-              <StatusBadge status={profile.status} />
-            </div>
+            <div className="mt-3"><StatusBadge status={profile.status} /></div>
           )}
-          <div className="w-full mt-4 pt-4 border-t border-border space-y-2">
+          <div className="w-full mt-4 pt-4 border-t border-border space-y-2 text-left">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Mail className="w-4 h-4 flex-shrink-0" />
               <span className="truncate">{user?.email ?? "—"}</span>
@@ -57,6 +76,12 @@ export default function Profile() {
                 <span>{profile.phone}</span>
               </div>
             )}
+            {profile?.workLocation && (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <MapPin className="w-4 h-4 flex-shrink-0" />
+                <span>{profile.workLocation}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Shield className="w-4 h-4 flex-shrink-0" />
               <span className="capitalize">{formatEnum(user?.role)}</span>
@@ -64,29 +89,43 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* Employment Details */}
+        {/* Right column */}
         <div className="md:col-span-2 space-y-6">
-          <div className="bg-white border border-border rounded-lg shadow-sm p-6">
-            <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-              <Briefcase className="w-4 h-4 text-muted-foreground" /> Employment Details
-            </h3>
-            <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3">
-              {[
-                { label: "Employee Code", value: profile?.employeeCode },
-                { label: "Department", value: profile?.departmentName },
-                { label: "Designation", value: profile?.designationName },
-                { label: "Employment Type", value: formatEnum(profile?.employmentType) },
-                { label: "Joining Date", value: profile?.joiningDate ? formatDate(profile.joiningDate) : "—" },
-                { label: "Status", value: formatEnum(profile?.status) },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex flex-col py-2 border-b border-secondary last:border-0">
-                  <dt className="text-xs text-muted-foreground">{label}</dt>
-                  <dd className="text-sm font-medium text-foreground mt-0.5">{value ?? "—"}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
 
+          {/* Employment Details */}
+          <SectionCard icon={Briefcase} title="Employment Details">
+            <Field label="Employee Code" value={profile?.employeeCode} />
+            <Field label="Department" value={profile?.departmentName} />
+            <Field label="Designation" value={profile?.designationName} />
+            <Field label="Reporting Manager" value={profile?.reportingManagerName} />
+            <Field label="Employment Type" value={formatEnum(profile?.employmentType)} />
+            <Field label="Work Location" value={profile?.workLocation} />
+            <Field label="Seating Location" value={profile?.seatingLocation} />
+            <Field label="Joining Date" value={profile?.joiningDate ? formatDate(profile.joiningDate) : null} />
+            <Field label="Status" value={formatEnum(profile?.status)} />
+          </SectionCard>
+
+          {/* Personal Details */}
+          <SectionCard icon={User} title="Personal Details">
+            <Field label="Mobile" value={profile?.phone} />
+            <Field label="Work Phone" value={profile?.workPhone} />
+            <Field label="Personal Email" value={profile?.personalEmail} />
+            <Field label="Gender" value={formatEnum(profile?.gender)} />
+            <Field label="Date of Birth" value={profile?.dateOfBirth ? formatDate(profile.dateOfBirth) : null} />
+            <Field label="Marital Status" value={formatEnum(profile?.maritalStatus)} />
+            <Field label="Current Location" value={profile?.currentLocation} />
+            <Field label="Permanent Address" value={profile?.address} />
+          </SectionCard>
+
+          {/* Emergency Contact */}
+          {(profile?.emergencyContact || profile?.emergencyPhone) && (
+            <SectionCard icon={Phone} title="Emergency Contact">
+              <Field label="Contact Name" value={profile?.emergencyContact} />
+              <Field label="Contact Phone" value={profile?.emergencyPhone} />
+            </SectionCard>
+          )}
+
+          {/* Leave Balances */}
           <div className="bg-white border border-border rounded-lg shadow-sm p-6">
             <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
               <Calendar className="w-4 h-4 text-muted-foreground" /> Leave Balances — {new Date().getFullYear()}

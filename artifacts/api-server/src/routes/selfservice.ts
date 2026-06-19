@@ -2,6 +2,8 @@ import { Router, type IRouter, type Request, type Response } from "express";
 import { db } from "@workspace/db";
 import {
   employeesTable,
+  departmentsTable,
+  designationsTable,
   attendanceRecordsTable,
   attendanceBreaksTable,
   leaveRequestsTable,
@@ -26,7 +28,23 @@ router.get("/self-service/profile/:employeeId", requireAuth, async (req: Request
     if (!(await canReadEmployee(req, res, empId))) return;
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, empId));
     if (!emp) { res.status(404).json({ error: "Employee not found" }); return; }
-    res.json(emp);
+
+    const [dept] = emp.departmentId
+      ? await db.select({ name: departmentsTable.name }).from(departmentsTable).where(eq(departmentsTable.id, emp.departmentId))
+      : [];
+    const [desig] = emp.designationId
+      ? await db.select({ name: designationsTable.name }).from(designationsTable).where(eq(designationsTable.id, emp.designationId))
+      : [];
+    const [mgr] = emp.reportingManagerId
+      ? await db.select({ firstName: employeesTable.firstName, lastName: employeesTable.lastName }).from(employeesTable).where(eq(employeesTable.id, emp.reportingManagerId))
+      : [];
+
+    res.json({
+      ...emp,
+      departmentName: dept?.name ?? null,
+      designationName: desig?.name ?? null,
+      reportingManagerName: mgr ? `${mgr.firstName} ${mgr.lastName}` : null,
+    });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
