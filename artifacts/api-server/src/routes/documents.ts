@@ -101,6 +101,21 @@ router.get("/documents/company/:id/download", requireAuth, async (req, res) => {
   }
 });
 
+/** Edit company document name / category / description */
+router.patch("/documents/company/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const { name, category, description } = req.body as { name?: string; category?: string; description?: string };
+    await db
+      .update(companyDocumentsTable)
+      .set({ ...(name && { name }), ...(category && { category }), description: description ?? null })
+      .where(eq(companyDocumentsTable.id, req.params.id as string));
+    const [updated] = await db.select().from(companyDocumentsTable).where(eq(companyDocumentsTable.id, req.params.id as string));
+    res.json(updated);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 /** Soft-delete (deactivate) a company document */
 router.delete("/documents/company/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
   try {

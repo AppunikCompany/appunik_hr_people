@@ -460,6 +460,9 @@ export default function Letters() {
   const [previewLetter, setPreviewLetter] = useState<any>(null);
   const [uploadCompanyOpen, setUploadCompanyOpen] = useState(false);
   const [uploadEmployeeOpen, setUploadEmployeeOpen] = useState(false);
+  const [editDocOpen, setEditDocOpen] = useState(false);
+  const [editDoc, setEditDoc] = useState<any>(null);
+  const [editDocForm, setEditDocForm] = useState({ name: "", category: "general", description: "" });
 
   // ── Mutations ──
   const deleteTemplate = useMutation({
@@ -477,19 +480,37 @@ export default function Letters() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["company-docs"] }); toast.success("Document removed"); },
     onError: (e: any) => toast.error(e.message),
   });
+  const updateCompanyDoc = useMutation({
+    mutationFn: (data: any) => fetchApi(`/documents/company/${editDoc?.id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["company-docs"] }); setEditDocOpen(false); toast.success("Document updated"); },
+    onError: (e: any) => toast.error(e.message),
+  });
   const deleteEmployeeDoc = useMutation({
     mutationFn: (id: string) => fetchApi(`/documents/employee/${id}`, { method: "DELETE" }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-docs"] }); toast.success("Document deleted"); },
     onError: (e: any) => toast.error(e.message),
   });
 
-  // ── Download helpers ──
+  // ── Download / Open helpers ──
   const downloadCompanyDoc = async (doc: any) => {
     try {
       const res = await fetchApi<{ fileName: string; mimeType: string; fileData: string }>(
         `/documents/company/${doc.id}/download`
       );
       downloadFromBase64(res.fileData, res.fileName, res.mimeType);
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  const openCompanyDoc = async (doc: any) => {
+    try {
+      const res = await fetchApi<{ fileName: string; mimeType: string; fileData: string }>(
+        `/documents/company/${doc.id}/download`
+      );
+      const bytes = new Uint8Array(atob(res.fileData).split("").map((c) => c.charCodeAt(0)));
+      const blob = new Blob([bytes], { type: res.mimeType });
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
     } catch (e: any) { toast.error(e.message); }
   };
   const downloadEmployeeDoc = async (doc: any) => {
@@ -575,14 +596,23 @@ export default function Letters() {
                     </div>
                   </div>
                   <div className="flex gap-2 pt-1">
-                    <Button size="sm" className="flex-1" onClick={() => downloadCompanyDoc(doc)}>
-                      <Download className="w-3.5 h-3.5 mr-1.5" /> Download
+                    <Button size="sm" variant="outline" className="flex-1" onClick={() => openCompanyDoc(doc)}>
+                      <Eye className="w-3.5 h-3.5 mr-1.5" /> Open
+                    </Button>
+                    <Button size="sm" variant="ghost" className="px-2" onClick={() => downloadCompanyDoc(doc)} title="Download">
+                      <Download className="w-4 h-4" />
                     </Button>
                     {isPrivileged && (
-                      <Button size="sm" variant="ghost" className="px-2 text-red-500 hover:text-red-600 hover:bg-red-50"
-                        onClick={() => { if (confirm(`Remove "${doc.name}"?`)) deleteCompanyDoc.mutate(doc.id); }}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <>
+                        <Button size="sm" variant="ghost" className="px-2" title="Edit"
+                          onClick={() => { setEditDoc(doc); setEditDocForm({ name: doc.name, category: doc.category ?? "general", description: doc.description ?? "" }); setEditDocOpen(true); }}>
+                          <Edit2 className="w-4 h-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="px-2 text-red-500 hover:text-red-600 hover:bg-red-50" title="Delete"
+                          onClick={() => { if (confirm(`Remove "${doc.name}"?`)) deleteCompanyDoc.mutate(doc.id); }}>
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -815,6 +845,41 @@ export default function Letters() {
           </TabsContent>
         )}
       </Tabs>
+
+      {/* ── Edit Company Document Dialog ── */}
+      <Dialog open={editDocOpen} onOpenChange={(o) => { if (!o) setEditDocOpen(false); }}>
+        <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>Edit Document</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Document Name *</Label>
+              <Input value={editDocForm.name} onChange={(e) => setEditDocForm(f => ({ ...f, name: e.target.value }))} className="mt-1" />
+            </div>
+            <div>
+              <Label>Category</Label>
+              <select
+                value={editDocForm.category}
+                onChange={(e) => setEditDocForm(f => ({ ...f, category: e.target.value }))}
+                className="mt-1 w-full border border-border rounded-md px-3 py-2 text-sm bg-background"
+              >
+                {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Description</Label>
+              <Textarea value={editDocForm.description} onChange={(e) => setEditDocForm(f => ({ ...f, description: e.target.value }))} className="mt-1" rows={2} placeholder="Optional short description..." />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDocOpen(false)}>Cancel</Button>
+            <Button onClick={() => { if (!editDocForm.name.trim()) { toast.error("Name is required"); return; } updateCompanyDoc.mutate(editDocForm); }} disabled={updateCompanyDoc.isPending}>
+              {updateCompanyDoc.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Dialogs ── */}
       <TemplateDialog
