@@ -219,6 +219,8 @@ export default function Attendance() {
   const [month, setMonth] = useState(String(new Date().getMonth() + 1));
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [monthlySubTab, setMonthlySubTab] = useState(false);
+  const [dailySubTab, setDailySubTab] = useState(false);
+  const [dailyDate, setDailyDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [rejectDialog, setRejectDialog] = useState<{ open: boolean; id: string; note: string }>({ open: false, id: "", note: "" });
 
   const { data: team, isLoading } = useAttendanceTeam();
@@ -235,6 +237,12 @@ export default function Attendance() {
     queryKey: ["my-attendance", user?.employeeId, month, year],
     queryFn: () => fetchApi<any>(`/self-service/attendance/${user?.employeeId}?month=${month}&year=${year}`),
     enabled: !!user?.employeeId,
+  });
+
+  const { data: dailyReport, isLoading: dailyLoading } = useQuery({
+    queryKey: ["att-daily", dailyDate],
+    queryFn: () => fetchApi<any[]>(`/attendance/daily?date=${dailyDate}`),
+    enabled: dailySubTab,
   });
 
   const { data: myRegularizations } = useQuery({
@@ -311,20 +319,86 @@ export default function Attendance() {
         <TabsContent value="daily">
           <div className="flex gap-2 mb-4">
             <button
-              onClick={() => setMonthlySubTab(false)}
-              className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${!monthlySubTab ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-secondary"}`}
+              onClick={() => { setMonthlySubTab(false); setDailySubTab(false); }}
+              className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${!monthlySubTab && !dailySubTab ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-secondary"}`}
             >
               Team Today
             </button>
             <button
-              onClick={() => setMonthlySubTab(true)}
+              onClick={() => { setDailySubTab(true); setMonthlySubTab(false); }}
+              className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${dailySubTab ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-secondary"}`}
+            >
+              Daily View
+            </button>
+            <button
+              onClick={() => { setMonthlySubTab(true); setDailySubTab(false); }}
               className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${monthlySubTab ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-secondary"}`}
             >
               Monthly View
             </button>
           </div>
 
-          {!monthlySubTab ? (
+          {dailySubTab ? (
+            /* Daily View — pick any date, see everyone's clock-in/out */
+            <>
+              <div className="flex items-center gap-3 mb-4">
+                <Input
+                  type="date"
+                  max={new Date().toISOString().split("T")[0]}
+                  value={dailyDate}
+                  onChange={(e) => setDailyDate(e.target.value)}
+                  className="w-44"
+                />
+                <span className="text-sm text-muted-foreground">
+                  {dailyReport ? `${dailyReport.filter((r: any) => r.status === "wfo").length} in office · ${dailyReport.filter((r: any) => r.status === "wfh").length} WFH · ${dailyReport.filter((r: any) => r.status === "absent").length} absent` : ""}
+                </span>
+              </div>
+              <div className="bg-white border border-border rounded-lg shadow-sm overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
+                      <th className="text-left px-5 py-3">Employee</th>
+                      <th className="text-left px-5 py-3">Department</th>
+                      <th className="text-left px-5 py-3">Status</th>
+                      <th className="text-left px-5 py-3">Clock In</th>
+                      <th className="text-left px-5 py-3">Clock Out</th>
+                      <th className="text-right px-5 py-3">Hours</th>
+                      <th className="text-left px-5 py-3">Flags</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dailyLoading ? (
+                      <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
+                    ) : !dailyReport || dailyReport.length === 0 ? (
+                      <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">No records for {dailyDate}</td></tr>
+                    ) : dailyReport.map((r: any, i: number) => (
+                      <tr key={r.employeeId} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
+                        <td className="px-5 py-3 font-medium text-foreground">{r.employeeName}</td>
+                        <td className="px-5 py-3 text-muted-foreground">{r.department}</td>
+                        <td className="px-5 py-3"><StatusBadge status={r.status} /></td>
+                        <td className="px-5 py-3 text-muted-foreground font-mono text-xs">
+                          {r.clockIn ? new Date(r.clockIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                        </td>
+                        <td className="px-5 py-3 text-muted-foreground font-mono text-xs">
+                          {r.clockOut ? new Date(r.clockOut).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
+                        </td>
+                        <td className="px-5 py-3 text-right text-muted-foreground">
+                          {r.hoursWorked != null ? r.hoursWorked.toFixed(1) + "h" : "—"}
+                        </td>
+                        <td className="px-5 py-3">
+                          <div className="flex gap-1 flex-wrap">
+                            {r.isLate && <span className="text-xs bg-red-50 text-red-500 border border-red-200 px-1.5 py-0.5 rounded-full font-medium">Late</span>}
+                            {r.isHalfDay && <span className="text-xs bg-amber-50 text-amber-600 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">Half Day</span>}
+                            {!r.isLate && !r.isHalfDay && r.status !== "absent" && r.status !== "on_leave" && r.clockIn && <span className="text-xs text-muted-foreground">—</span>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          ) : !monthlySubTab ? (
             <>
               <div className="grid grid-cols-3 gap-4 mb-6">
                 <div className="bg-white border border-border rounded-lg p-4 shadow-sm text-center">

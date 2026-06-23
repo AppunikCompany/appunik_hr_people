@@ -401,6 +401,51 @@ router.get("/attendance/team", requireAuth, async (req, res) => {
   }
 });
 
+/** Daily attendance view — all employees for a specific date with clock-in/out details */
+router.get("/attendance/daily", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res) => {
+  try {
+    const date = (req.query.date as string) ?? todayIST();
+
+    const employeeList = await db.select().from(employeesTable).where(eq(employeesTable.status, "active"));
+    const records = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.date, date));
+    const recordMap = new Map(records.map((r) => [r.employeeId, r]));
+
+    const onLeaveRows = await db
+      .select({ employeeId: leaveRequestsTable.employeeId })
+      .from(leaveRequestsTable)
+      .where(
+        and(
+          eq(leaveRequestsTable.status, "approved"),
+          lte(leaveRequestsTable.startDate, date),
+          gte(leaveRequestsTable.endDate, date)
+        )
+      );
+    const onLeaveIds = new Set(onLeaveRows.map((l) => l.employeeId));
+
+    const depts = await db.select({ id: departmentsTable.id, name: departmentsTable.name }).from(departmentsTable);
+    const deptMap = new Map(depts.map((d) => [d.id, d.name]));
+
+    const result = employeeList.map((emp) => {
+      const rec = recordMap.get(emp.id);
+      return {
+        employeeId: emp.id,
+        employeeName: `${emp.firstName} ${emp.lastName}`,
+        department: emp.departmentId ? (deptMap.get(emp.departmentId) ?? "—") : "—",
+        status: rec ? rec.type : onLeaveIds.has(emp.id) ? "on_leave" : "absent",
+        clockIn: rec?.clockIn?.toISOString() ?? null,
+        clockOut: rec?.clockOut?.toISOString() ?? null,
+        hoursWorked: rec?.hoursWorked ?? null,
+        isLate: rec?.isLate ?? false,
+        isHalfDay: rec?.isHalfDay ?? false,
+      };
+    });
+
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 router.post("/attendance/overtime", requireAuth, async (req, res) => {
   try {
     const otId = crypto.randomUUID();
