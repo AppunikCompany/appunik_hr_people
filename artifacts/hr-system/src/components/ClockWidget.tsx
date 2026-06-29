@@ -11,6 +11,18 @@ function isWithinWorkingHours(): boolean {
   return h >= 8 && h < 22;
 }
 
+// ── Browser push notification helper ─────────────────────────────────────────
+async function showBrowserNotification(title: string, body: string): Promise<void> {
+  if (!("Notification" in window)) return;
+  let perm = Notification.permission;
+  if (perm === "default") {
+    perm = await Notification.requestPermission();
+  }
+  if (perm === "granted") {
+    new Notification(title, { body, icon: "/favicon.ico" });
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatHMS(seconds: number): string {
@@ -114,6 +126,13 @@ export function ClockWidget({ record, compact = false }: Props) {
     return () => clearInterval(id);
   }, []);
 
+  // Request browser notification permission once on mount (so the prompt appears before the user clocks in)
+  useEffect(() => {
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
   // Clocked-in timer (pauses while on break)
   const workedElapsed = useElapsed(
     record?.type === "wfo" && record.clockIn && !record.clockOut && !record.isOnBreak
@@ -130,14 +149,25 @@ export function ClockWidget({ record, compact = false }: Props) {
   };
 
   const clockInMut = useMutation({
-    mutationFn: () => fetchApi("/attendance/clock-in", { method: "POST", body: JSON.stringify({}) }),
-    onSuccess: () => { invalidate(); toast.success("Clocked in!"); },
+    mutationFn: () => fetchApi<any>("/attendance/clock-in", { method: "POST", body: JSON.stringify({}) }),
+    onSuccess: (data) => {
+      invalidate();
+      const t = data?.clockIn ? new Date(data.clockIn).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "";
+      toast.success(`Clocked in${t ? ` at ${t}` : ""}!`);
+      showBrowserNotification("Clocked In ✅", `You've clocked in${t ? ` at ${t}` : ""}. Have a great day!`).catch(() => {});
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
   const clockOutMut = useMutation({
-    mutationFn: () => fetchApi("/attendance/clock-out", { method: "POST", body: JSON.stringify({}) }),
-    onSuccess: () => { invalidate(); toast.success("Clocked out. See you tomorrow!"); },
+    mutationFn: () => fetchApi<any>("/attendance/clock-out", { method: "POST", body: JSON.stringify({}) }),
+    onSuccess: (data) => {
+      invalidate();
+      const t = data?.clockOut ? new Date(data.clockOut).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "";
+      const h = data?.hoursWorked != null ? ` · ${data.hoursWorked.toFixed(1)}h logged` : "";
+      toast.success(`Clocked out${t ? ` at ${t}` : ""}${h}. See you tomorrow!`);
+      showBrowserNotification("Clocked Out 👋", `You've clocked out${t ? ` at ${t}` : ""}${h}. Rest well!`).catch(() => {});
+    },
     onError: (e: any) => toast.error(e.message),
   });
 

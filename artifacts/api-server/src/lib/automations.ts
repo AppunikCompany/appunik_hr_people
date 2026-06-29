@@ -74,6 +74,8 @@ export type AutomationEvent =
   | "attendance.wfh_requested"
   | "attendance.clock_in_reminder"
   | "attendance.clock_out_reminder"
+  | "attendance.clock_in"
+  | "attendance.clock_out"
   | "employee.document_expiry"
   | "holiday.announcement";
 

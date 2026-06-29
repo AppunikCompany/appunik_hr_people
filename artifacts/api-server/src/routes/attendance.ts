@@ -72,6 +72,12 @@ router.post("/attendance/clock-in", requireAuth, async (req, res): Promise<void>
       isLate: false, isHalfDay: false, notes,
     });
     const [record] = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, recId));
+
+    const clockInTime = new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit",
+    }).format(new Date());
+    fireAutomationEvent({ event: "attendance.clock_in", employeeId, variables: { clockInTime, date: today } }).catch(console.error);
+
     res.status(201).json(record);
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -136,6 +142,16 @@ router.post("/attendance/clock-out", requireAuth, async (req, res): Promise<void
       .set({ clockOut, hoursWorked, isHalfDay, notes: notes ?? existing.notes })
       .where(eq(attendanceRecordsTable.id, existing.id));
     const [record] = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.id, existing.id));
+
+    const clockOutTime = new Intl.DateTimeFormat("en-IN", {
+      timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit",
+    }).format(clockOut);
+    fireAutomationEvent({
+      event: "attendance.clock_out",
+      employeeId,
+      variables: { clockOutTime, hoursWorked: hoursWorked.toFixed(1), date: today },
+    }).catch(console.error);
+
     res.json(record);
   } catch (e) {
     res.status(500).json({ error: String(e) });

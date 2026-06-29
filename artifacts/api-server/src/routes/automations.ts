@@ -292,6 +292,8 @@ const SEED_TEMPLATES = [
   { code: "document_expiry_alert", name: "Document Expiry Alert", subject: "Document Expiring Soon: {{documentType}}", bodyHtml: "<p>Dear {{fullName}},</p><p>Your document \"{{documentType}}\" is expiring on {{expiryDate}}. Please renew and upload the updated document in the HR portal.</p><p>Best regards,<br>HR Team</p>", variables: ["fullName", "documentType", "expiryDate"] },
   { code: "clock_in_reminder", name: "Clock-In Reminder", subject: "Reminder: You haven't clocked in yet today", bodyHtml: "<p>Dear {{fullName}},</p><p>This is a friendly reminder that you haven't clocked in yet today. Please log in to the HR portal and mark your attendance — either clock in or mark WFH.</p><p>If you have already done so and received this in error, please ignore.</p><p>Best regards,<br>HR Team</p>", variables: ["fullName"] },
   { code: "clock_out_reminder", name: "Clock-Out Reminder", subject: "Reminder: Please clock out before you leave", bodyHtml: "<p>Dear {{fullName}},</p><p>It's time to wrap up for the day! Please don't forget to clock out in the HR portal so your hours are recorded correctly.</p><p>Best regards,<br>HR Team</p>", variables: ["fullName"] },
+  { code: "clock_in_confirmation", name: "Clock-In Confirmation", subject: "You've clocked in at {{clockInTime}}", bodyHtml: "<p>Hi {{firstName}},</p><p>This confirms that you have successfully clocked in at <strong>{{clockInTime}}</strong> on {{date}}.</p><p>Have a great and productive day!</p><p>Best regards,<br>HR Team</p>", variables: ["firstName", "fullName", "clockInTime", "date"] },
+  { code: "clock_out_confirmation", name: "Clock-Out Confirmation", subject: "You've clocked out — {{hoursWorked}}h logged today", bodyHtml: "<p>Hi {{firstName}},</p><p>This confirms that you have successfully clocked out at <strong>{{clockOutTime}}</strong> on {{date}}.</p><p>Total hours logged today: <strong>{{hoursWorked}} hours</strong>.</p><p>Rest well and see you tomorrow!</p><p>Best regards,<br>HR Team</p>", variables: ["firstName", "fullName", "clockOutTime", "hoursWorked", "date"] },
 ];
 
 const SEED_RULES = [
@@ -312,6 +314,8 @@ const SEED_RULES = [
   { code: "rule_doc_expiry", name: "Document Expiry Alert", triggerType: "event", triggerEvent: "employee.document_expiry", cronExpr: null, templateCode: "document_expiry_alert", recipients: "employee" },
   { code: "rule_clock_in_reminder", name: "Clock-In Reminder Email", triggerType: "event", triggerEvent: "attendance.clock_in_reminder", cronExpr: null, templateCode: "clock_in_reminder", recipients: "employee" },
   { code: "rule_clock_out_reminder", name: "Clock-Out Reminder Email", triggerType: "event", triggerEvent: "attendance.clock_out_reminder", cronExpr: null, templateCode: "clock_out_reminder", recipients: "employee" },
+  { code: "rule_clock_in_confirmation", name: "Clock-In Confirmation Email", triggerType: "event", triggerEvent: "attendance.clock_in", cronExpr: null, templateCode: "clock_in_confirmation", recipients: "employee" },
+  { code: "rule_clock_out_confirmation", name: "Clock-Out Confirmation Email", triggerType: "event", triggerEvent: "attendance.clock_out", cronExpr: null, templateCode: "clock_out_confirmation", recipients: "employee" },
 ];
 
 router.post("/automations/seed-templates", requireAuth, requireRole("super_admin", "hr_admin"), async (_req, res) => {
