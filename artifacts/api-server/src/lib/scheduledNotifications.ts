@@ -6,6 +6,7 @@
 import { db, employeesTable, attendanceRecordsTable, leaveRequestsTable } from "@workspace/db";
 import { eq, inArray, and, lte, gte, isNull } from "drizzle-orm";
 import { notifyUser } from "./notify";
+import { sendEmail } from "./mailer";
 
 const COMPANY_TIMEZONE = "Asia/Kolkata";
 
@@ -26,38 +27,6 @@ function isTodayWeekendIST(): boolean {
   return weekday === "Sat" || weekday === "Sun";
 }
 
-// ── Direct ZeptoMail sender ───────────────────────────────────────────────────
-
-async function sendDirectEmail(to: string, subject: string, htmlBody: string): Promise<void> {
-  const token = process.env.ZEPTOMAIL_API_KEY ?? "";
-  if (!token || !to) return;
-
-  const res = await fetch(
-    process.env.ZEPTOMAIL_URL ?? "https://api.zeptomail.in/v1.1/email",
-    {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        "content-type": "application/json",
-        authorization: `Zoho-enczapikey ${token}`,
-      },
-      body: JSON.stringify({
-        from: {
-          address: process.env.FROM_EMAIL ?? "hr@appunik.com",
-          name: process.env.FROM_NAME ?? "Appunik HR",
-        },
-        to: [{ email_address: { address: to, name: "" } }],
-        subject,
-        htmlbody: htmlBody,
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`ZeptoMail ${res.status}: ${text}`);
-  }
-}
 
 // ── Clock-in reminder (runs at 10:15 AM IST) ─────────────────────────────────
 export async function notifyForgottenClockIn(): Promise<void> {
@@ -130,7 +99,7 @@ export async function notifyForgottenClockIn(): Promise<void> {
     <p style="margin:24px 0 0;color:#9ca3af;font-size:12px">This is an automated reminder from your HR system.</p>
   </div>
 </div>`;
-        await sendDirectEmail(emp.email, "⏰ Attendance Reminder — Please clock in", html).catch((err) => {
+        await sendEmail({ to: emp.email, subject: "⏰ Attendance Reminder — Please clock in", html }).catch((err) => {
           console.error(`[scheduled] Clock-in email failed for ${emp.email}:`, err);
         });
       }
@@ -218,7 +187,7 @@ export async function notifyForgottenClockOut(): Promise<void> {
     <p style="margin:24px 0 0;color:#9ca3af;font-size:12px">This is an automated reminder from your HR system.</p>
   </div>
 </div>`;
-        await sendDirectEmail(emp.email, "⏰ Check-Out Reminder — Please check out", html).catch((err) => {
+        await sendEmail({ to: emp.email, subject: "⏰ Check-Out Reminder — Please check out", html }).catch((err) => {
           console.error(`[scheduled] Clock-out email failed for ${emp.email}:`, err);
         });
       }

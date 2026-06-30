@@ -11,50 +11,7 @@ import {
 } from "@workspace/db";
 import { eq, and, inArray } from "drizzle-orm";
 
-const ZEPTOMAIL_TOKEN = process.env.ZEPTOMAIL_API_KEY ?? "";
-// ZeptoMail regional endpoint — India (in) or global (com)
-const ZEPTOMAIL_URL = process.env.ZEPTOMAIL_URL ?? "https://api.zeptomail.in/v1.1/email";
-const FROM_EMAIL = process.env.FROM_EMAIL ?? "hr@appunik.com";
-const FROM_NAME  = process.env.FROM_NAME  ?? "Appunik HR";
-
-async function sendEmailViaZeptoMail(opts: {
-  to: string[];
-  subject: string;
-  html: string;
-}): Promise<void> {
-  if (!ZEPTOMAIL_TOKEN) throw new Error("ZEPTOMAIL_API_KEY not configured");
-
-  for (const address of opts.to) {
-    const res = await fetch(ZEPTOMAIL_URL, {
-      method: "POST",
-      headers: {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "authorization": `Zoho-enczapikey ${ZEPTOMAIL_TOKEN}`,
-      },
-      body: JSON.stringify({
-        from: { address: FROM_EMAIL, name: FROM_NAME },
-        to: [{ email_address: { address, name: "" } }],
-        subject: opts.subject,
-        htmlbody: opts.html,
-      }),
-    });
-    if (!res.ok) {
-      let detail = res.statusText;
-      try {
-        const body = await res.json();
-        // ZeptoMail wraps details in error.details[].message
-        const msgs: string[] = (body?.error?.details ?? []).map((d: any) => d.message).filter(Boolean);
-        detail = msgs.length
-          ? msgs.join("; ")
-          : (body?.error?.message ?? body?.message ?? JSON.stringify(body));
-      } catch {
-        detail = (await res.text().catch(() => res.statusText)) || res.statusText;
-      }
-      throw new Error(`ZeptoMail ${res.status}: ${detail}`);
-    }
-  }
-}
+import { sendEmail } from "./mailer";
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key) => vars[key] ?? `{{${key}}}`);
@@ -165,9 +122,9 @@ export async function fireAutomationEvent(opts: FireEventOptions): Promise<void>
     let status: "sent" | "failed" = "sent";
     let errorMsg: string | null = null;
 
-    if (ZEPTOMAIL_TOKEN && uniqueEmails.length > 0) {
+    if (process.env.SMTP_PASS && uniqueEmails.length > 0) {
       try {
-        await sendEmailViaZeptoMail({
+        await sendEmail({
           to: uniqueEmails,
           subject,
           html: `<div style="font-family:Inter,sans-serif;max-width:600px;margin:auto">${body.replace(/\n/g, "<br>")}</div>`,

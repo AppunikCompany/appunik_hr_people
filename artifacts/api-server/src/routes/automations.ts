@@ -14,6 +14,7 @@ import {
 import { eq, desc, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { runScheduledAutomations, fireAutomationEvent } from "../lib/automations";
+import { sendEmail, verifySmtpConnection } from "../lib/mailer";
 
 const router: IRouter = Router();
 
@@ -105,35 +106,16 @@ router.post("/automations/rules/:id/test", requireAuth, requireRole("super_admin
     const subject = template.subject.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
     const body = template.bodyHtml.replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] ?? `{{${k}}}`);
 
-    const token = process.env.ZEPTOMAIL_API_KEY ?? "";
-    const zeptoUrl = process.env.ZEPTOMAIL_URL ?? "https://api.zeptomail.in/v1.1/email";
-    const fromEmail = process.env.FROM_EMAIL ?? "hr@appunik.com";
-    const fromName  = process.env.FROM_NAME  ?? "Appunik HR";
-
-    if (!token) {
-      res.json({ sent: false, reason: "ZEPTOMAIL_API_KEY not configured", subject, preview: body.slice(0, 200) });
+    if (!process.env.SMTP_PASS) {
+      res.json({ sent: false, reason: "SMTP_PASS not configured", subject, preview: body.slice(0, 200) });
       return;
     }
 
-    const zRes = await fetch(zeptoUrl, {
-      method: "POST",
-      headers: {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "authorization": `Zoho-enczapikey ${token}`,
-      },
-      body: JSON.stringify({
-        from: { address: fromEmail, name: fromName },
-        to: [{ email_address: { address: testEmail, name: "Test User" } }],
-        subject: `[TEST] ${subject}`,
-        htmlbody: `<div style="font-family:Inter,sans-serif;max-width:600px;margin:auto">${body.replace(/\n/g, "<br>")}</div>`,
-      }),
+    await sendEmail({
+      to: testEmail,
+      subject: `[TEST] ${subject}`,
+      html: `<div style="font-family:Inter,sans-serif;max-width:600px;margin:auto">${body.replace(/\n/g, "<br>")}</div>`,
     });
-
-    if (!zRes.ok) {
-      const text = await zRes.text().catch(() => zRes.statusText);
-      throw new Error(`ZeptoMail error ${zRes.status}: ${text}`);
-    }
 
     res.json({ sent: true, to: testEmail, subject: `[TEST] ${subject}` });
   } catch (e) {
@@ -181,53 +163,19 @@ router.get("/automations/logs", requireAuth, async (req, res) => {
 });
 
 router.get("/automations/email-config", requireAuth, requireRole("super_admin", "hr_admin"), async (_req, res) => {
-  const keySet = Boolean(process.env.ZEPTOMAIL_API_KEY);
   const fromEmail = process.env.FROM_EMAIL ?? "hr@appunik.com";
-  const apiUrl = process.env.ZEPTOMAIL_URL ?? "https://api.zeptomail.in/v1.1/email";
+  const smtpHost = process.env.SMTP_HOST ?? "smtp.zeptomail.in";
+  const smtpPort = process.env.SMTP_PORT ?? "587";
 
-  if (!keySet) {
-    res.json({ configured: false, fromEmail, apiUrl, error: "ZEPTOMAIL_API_KEY is not set in environment variables" });
-    return;
-  }
-
-  // Send a real minimal probe to a dummy address to check both auth AND domain verification.
-  // ZeptoMail returns: 401/403 = bad key, 400 = key OK but body invalid, 500 = domain not verified
   try {
-    const probe = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "authorization": `Zoho-enczapikey ${process.env.ZEPTOMAIL_API_KEY}`,
-      },
-      body: JSON.stringify({
-        from: { address: fromEmail, name: "Probe" },
-        to: [{ email_address: { address: "probe@example.com", name: "Probe" } }],
-        subject: "Probe",
-        htmlbody: "<p>probe</p>",
-      }),
-    });
-
-    let probeDetail = "";
-    try {
-      const body = await probe.json();
-      const msgs: string[] = (body?.error?.details ?? []).map((d: any) => d.message).filter(Boolean);
-      probeDetail = msgs.length ? msgs.join("; ") : (body?.error?.message ?? body?.message ?? JSON.stringify(body));
-    } catch {
-      probeDetail = await probe.text().catch(() => probe.statusText);
-    }
-
-    if (probe.status === 401 || probe.status === 403) {
-      res.json({ configured: false, fromEmail, apiUrl, error: `API key rejected (${probe.status}). Go to ZeptoMail → Mail Agents → your agent → Send Mail Token and copy the token.` });
-    } else if (probe.status === 500) {
-      res.json({ configured: false, fromEmail, apiUrl,
-        error: `Sending domain not verified (${probe.status}): ${probeDetail}. In ZeptoMail, go to Mail Agents → Sending Domains and verify "${fromEmail.split("@")[1]}".` });
+    const result = await verifySmtpConnection();
+    if (result.ok) {
+      res.json({ configured: true, fromEmail, smtpHost, smtpPort });
     } else {
-      // 200 = actually sent (fine), 400 = auth ok but body issue, anything else = connected
-      res.json({ configured: true, fromEmail, apiUrl, probeStatus: probe.status });
+      res.json({ configured: false, fromEmail, smtpHost, smtpPort, error: result.error });
     }
   } catch (e) {
-    res.json({ configured: false, fromEmail, apiUrl, error: `Network error reaching ZeptoMail: ${String(e)}` });
+    res.json({ configured: false, fromEmail, smtpHost, smtpPort, error: `SMTP connection error: ${String(e)}` });
   }
 });
 
