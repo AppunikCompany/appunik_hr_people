@@ -190,8 +190,8 @@ router.get("/automations/email-config", requireAuth, requireRole("super_admin", 
     return;
   }
 
-  // Quick connectivity check — send a minimal request with an invalid body to see if auth works
-  // ZeptoMail returns 401 if the token is wrong, 400 if it's right but body is malformed
+  // Send a real minimal probe to a dummy address to check both auth AND domain verification.
+  // ZeptoMail returns: 401/403 = bad key, 400 = key OK but body invalid, 500 = domain not verified
   try {
     const probe = await fetch(apiUrl, {
       method: "POST",
@@ -200,13 +200,30 @@ router.get("/automations/email-config", requireAuth, requireRole("super_admin", 
         "content-type": "application/json",
         "authorization": `Zoho-enczapikey ${process.env.ZEPTOMAIL_API_KEY}`,
       },
-      body: JSON.stringify({}), // intentionally minimal — tells us auth status
+      body: JSON.stringify({
+        from: { address: fromEmail, name: "Probe" },
+        to: [{ email_address: { address: "probe@example.com", name: "Probe" } }],
+        subject: "Probe",
+        htmlbody: "<p>probe</p>",
+      }),
     });
-    const probeText = await probe.text().catch(() => "");
+
+    let probeDetail = "";
+    try {
+      const body = await probe.json();
+      const msgs: string[] = (body?.error?.details ?? []).map((d: any) => d.message).filter(Boolean);
+      probeDetail = msgs.length ? msgs.join("; ") : (body?.error?.message ?? body?.message ?? JSON.stringify(body));
+    } catch {
+      probeDetail = await probe.text().catch(() => probe.statusText);
+    }
+
     if (probe.status === 401 || probe.status === 403) {
-      res.json({ configured: false, fromEmail, apiUrl, error: `Authentication failed (${probe.status}): ${probeText}. Check that ZEPTOMAIL_API_KEY is the Send Mail Token from ZeptoMail → Mail Agents → your agent → Send Mail Token tab.` });
+      res.json({ configured: false, fromEmail, apiUrl, error: `API key rejected (${probe.status}). Go to ZeptoMail → Mail Agents → your agent → Send Mail Token and copy the token.` });
+    } else if (probe.status === 500) {
+      res.json({ configured: false, fromEmail, apiUrl,
+        error: `Sending domain not verified (${probe.status}): ${probeDetail}. In ZeptoMail, go to Mail Agents → Sending Domains and verify "${fromEmail.split("@")[1]}".` });
     } else {
-      // 400 = auth OK, body invalid (expected). 200 unlikely with empty body.
+      // 200 = actually sent (fine), 400 = auth ok but body issue, anything else = connected
       res.json({ configured: true, fromEmail, apiUrl, probeStatus: probe.status });
     }
   } catch (e) {

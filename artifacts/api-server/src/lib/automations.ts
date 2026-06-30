@@ -40,8 +40,18 @@ async function sendEmailViaZeptoMail(opts: {
       }),
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      throw new Error(`ZeptoMail error ${res.status}: ${text}`);
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        // ZeptoMail wraps details in error.details[].message
+        const msgs: string[] = (body?.error?.details ?? []).map((d: any) => d.message).filter(Boolean);
+        detail = msgs.length
+          ? msgs.join("; ")
+          : (body?.error?.message ?? body?.message ?? JSON.stringify(body));
+      } catch {
+        detail = (await res.text().catch(() => res.statusText)) || res.statusText;
+      }
+      throw new Error(`ZeptoMail ${res.status}: ${detail}`);
     }
   }
 }

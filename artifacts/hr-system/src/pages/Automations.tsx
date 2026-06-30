@@ -756,7 +756,11 @@ export default function Automations() {
                     <td className="px-5 py-3 text-muted-foreground text-xs">{log.recipientEmail}</td>
                     <td className="px-5 py-3"><StatusBadge status={log.status} /></td>
                     <td className="px-5 py-3 text-muted-foreground text-xs">{formatDateTime(log.sentAt)}</td>
-                    <td className="px-5 py-3 text-red-500 text-xs max-w-xs truncate">{log.errorMessage ?? "—"}</td>
+                    <td className="px-5 py-3 text-xs">
+                      {log.errorMessage
+                        ? <span className="text-red-500" title={log.errorMessage}>{log.errorMessage}</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>
