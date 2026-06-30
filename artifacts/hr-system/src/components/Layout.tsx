@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, useRoute, useLocation } from "wouter";
 import { useClerk } from "@clerk/clerk-react";
 import { cn } from "@/lib/utils";
-import { useCurrentUser, useCompanyProfile, useUnreadCount } from "@/hooks/useApi";
+import { useCurrentUser, useCompanyProfile, useUnreadCount, useNotifications } from "@/hooks/useApi";
+import { showBrowserNotification, requestNotificationPermission } from "@/lib/browserNotify";
 import {
   Users,
   Clock,
@@ -265,6 +266,34 @@ function ClerkLogoutItem() {
   );
 }
 
+// Watches the notification poll for newly-arrived items and shows OS-level browser notifications.
+function useBrowserNotificationWatcher() {
+  const { data: notifications } = useNotifications();
+  const seenIds = useRef<Set<string>>(new Set());
+  const initialized = useRef(false);
+
+  useEffect(() => {
+    requestNotificationPermission();
+  }, []);
+
+  useEffect(() => {
+    if (!notifications) return;
+    if (!initialized.current) {
+      // First load: mark everything already in the feed as seen — no popups on page open.
+      notifications.forEach((n) => seenIds.current.add(n.id));
+      initialized.current = true;
+      return;
+    }
+    // Subsequent polls: show a browser notification for anything that wasn't there before.
+    for (const n of notifications) {
+      if (!seenIds.current.has(n.id)) {
+        seenIds.current.add(n.id);
+        showBrowserNotification(n.title, n.body ?? "").catch(() => {});
+      }
+    }
+  }, [notifications]);
+}
+
 function BellButton() {
   const { data } = useUnreadCount();
   const [, navigate] = useLocation();
@@ -290,6 +319,7 @@ export function Layout({ children }: LayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const { data: user } = useCurrentUser();
   const { data: companyProfile } = useCompanyProfile();
+  useBrowserNotificationWatcher();
 
   const systemName = companyProfile?.name ? `${companyProfile.name}'s HR System` : "HR System";
 

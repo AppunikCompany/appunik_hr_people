@@ -11,17 +11,7 @@ function isWithinWorkingHours(): boolean {
   return h >= 8 && h < 22;
 }
 
-// ── Browser push notification helper ─────────────────────────────────────────
-async function showBrowserNotification(title: string, body: string): Promise<void> {
-  if (!("Notification" in window)) return;
-  let perm = Notification.permission;
-  if (perm === "default") {
-    perm = await Notification.requestPermission();
-  }
-  if (perm === "granted") {
-    new Notification(title, { body, icon: "/favicon.ico" });
-  }
-}
+import { showBrowserNotification, requestNotificationPermission } from "@/lib/browserNotify";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -128,9 +118,7 @@ export function ClockWidget({ record, compact = false }: Props) {
 
   // Request browser notification permission once on mount (so the prompt appears before the user clocks in)
   useEffect(() => {
-    if ("Notification" in window && Notification.permission === "default") {
-      Notification.requestPermission().catch(() => {});
-    }
+    requestNotificationPermission();
   }, []);
 
   // Clocked-in timer (pauses while on break)

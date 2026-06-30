@@ -10,6 +10,7 @@ import {
 import { eq, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
+import { notifyEmployee } from "../lib/notify";
 import { PRIVILEGED_ROLES, resolveEmployeeId } from "../lib/ownership";
 
 const router: IRouter = Router();
@@ -132,6 +133,12 @@ router.post("/kra/assignments", requireAuth, requireRole("super_admin", "hr_admi
     const enriched = await enrichAssignment(assignment);
 
     fireAutomationEvent({ event: "kra.assigned", employeeId: assignment.employeeId }).catch(console.error);
+    notifyEmployee(assignment.employeeId, {
+      type: "kra.assigned",
+      title: "New KRA assigned",
+      body: `You have been assigned "${enriched.kraTitle}" in the "${enriched.cycleName}" review cycle.`,
+      link: "/performance",
+    }).catch(console.error);
 
     res.status(201).json(enriched);
   } catch (e) {
