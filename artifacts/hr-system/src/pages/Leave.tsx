@@ -13,7 +13,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { formatDate } from "@/lib/utils";
-import { Plus, Check, X, Calendar, Info, Edit2, Download, Trash2, RotateCcw, Upload, AlertTriangle, BanknoteIcon } from "lucide-react";
+import { Plus, Check, X, Calendar, Info, Edit2, Download, Trash2, RotateCcw, Upload, AlertTriangle, BanknoteIcon, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+
+function SortIcon({ col, sortKey, sortDir }: { col: string; sortKey: string; sortDir: "asc" | "desc" }) {
+  if (sortKey !== col) return <ChevronsUpDown className="w-3 h-3 ml-1 opacity-30 inline-block" />;
+  return sortDir === "asc"
+    ? <ChevronUp className="w-3 h-3 ml-1 inline-block" />
+    : <ChevronDown className="w-3 h-3 ml-1 inline-block" />;
+}
 import { toast } from "sonner";
 
 function isSickLeave(types: any[], leaveTypeId: string): boolean {
@@ -947,6 +954,10 @@ function HolidaysTab() {
   const [year, setYear] = useState(now.getFullYear());
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<any>(null);
+  const [sortKey, setSortKey] = useState<string>("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const { data: currentUser } = useCurrentUser();
+  const isPrivileged = ["super_admin", "hr_admin"].includes(currentUser?.role ?? "");
   const qc = useQueryClient();
 
   const { data: holidays, isLoading } = useQuery({
@@ -966,6 +977,24 @@ function HolidaysTab() {
     restricted: "Restricted",
   };
 
+  const handleSort = (key: string) => {
+    if (!isPrivileged) return;
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("desc"); }
+  };
+
+  const sortedHolidays = [...((holidays as any[]) ?? [])].sort((a: any, b: any) => {
+    let av: string, bv: string;
+    switch (sortKey) {
+      case "name": av = a.name ?? ""; bv = b.name ?? ""; break;
+      case "type": av = a.type ?? ""; bv = b.type ?? ""; break;
+      case "date":
+      default: av = a.date ?? ""; bv = b.date ?? ""; break;
+    }
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return sortDir === "asc" ? cmp : -cmp;
+  });
+
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
@@ -984,25 +1013,37 @@ function HolidaysTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
-              <th className="text-left px-5 py-3">Holiday</th>
-              <th className="text-left px-5 py-3">Date</th>
+              <th
+                className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                onClick={() => handleSort("name")}
+              >
+                Holiday {isPrivileged && <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />}
+              </th>
+              <th
+                className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                onClick={() => handleSort("date")}
+              >
+                Date {isPrivileged && <SortIcon col="date" sortKey={sortKey} sortDir={sortDir} />}
+              </th>
               <th className="text-left px-5 py-3">Day</th>
-              <th className="text-left px-5 py-3">Type</th>
+              <th
+                className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                onClick={() => handleSort("type")}
+              >
+                Type {isPrivileged && <SortIcon col="type" sortKey={sortKey} sortDir={sortDir} />}
+              </th>
               <th className="text-left px-5 py-3">Actions</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
-            ) : !holidays || (holidays as any[]).length === 0 ? (
+            ) : sortedHolidays.length === 0 ? (
               <tr><td colSpan={5} className="text-center py-10 text-muted-foreground">
                 <Calendar className="w-8 h-8 mx-auto mb-2 text-muted-foreground/40" />
                 No holidays configured for {year}
               </td></tr>
-            ) : (holidays as any[])
-                .slice()
-                .sort((a: any, b: any) => a.date.localeCompare(b.date))
-                .map((h: any, i: number) => {
+            ) : sortedHolidays.map((h: any, i: number) => {
                   const d = new Date(h.date + "T00:00:00");
                   const dayName = d.toLocaleDateString("en-IN", { weekday: "long" });
                   return (
@@ -1304,12 +1345,35 @@ function LeaveReportsTab() {
 export default function Leave() {
   const [location] = useLocation();
   const [status, setStatus] = useState("");
+  const [sortKey, setSortKey] = useState<string>("startDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [applyOpen, setApplyOpen] = useState(false);
   const [approveTarget, setApproveTarget] = useState<any>(null);
   const [rejectTarget, setRejectTarget] = useState<any>(null);
   const [uploadDocTarget, setUploadDocTarget] = useState<any>(null);
   const { data: requests, isLoading } = useLeaveRequests(status ? { status } : undefined);
+  const { data: currentUser } = useCurrentUser();
+  const isPrivileged = ["super_admin", "hr_admin"].includes(currentUser?.role ?? "");
   const qc = useQueryClient();
+
+  const handleSort = (key: string) => {
+    if (!isPrivileged) return;
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("desc"); }
+  };
+
+  const sortedRequests = [...(requests ?? [])].sort((a: any, b: any) => {
+    let av: string, bv: string;
+    switch (sortKey) {
+      case "employee": av = a.employeeName ?? ""; bv = b.employeeName ?? ""; break;
+      case "leaveType": av = a.leaveTypeName ?? ""; bv = b.leaveTypeName ?? ""; break;
+      case "status": av = a.status ?? ""; bv = b.status ?? ""; break;
+      case "startDate":
+      default: av = a.startDate ?? ""; bv = b.startDate ?? ""; break;
+    }
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return sortDir === "asc" ? cmp : -cmp;
+  });
 
   const tabFromPath: Record<string, string> = {
     "/leave": "requests",
@@ -1380,21 +1444,41 @@ export default function Leave() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
-                    <th className="text-left px-5 py-3">Employee</th>
-                    <th className="text-left px-5 py-3">Leave Type</th>
-                    <th className="text-left px-5 py-3">Period</th>
+                    <th
+                      className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                      onClick={() => handleSort("employee")}
+                    >
+                      Employee {isPrivileged && <SortIcon col="employee" sortKey={sortKey} sortDir={sortDir} />}
+                    </th>
+                    <th
+                      className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                      onClick={() => handleSort("leaveType")}
+                    >
+                      Leave Type {isPrivileged && <SortIcon col="leaveType" sortKey={sortKey} sortDir={sortDir} />}
+                    </th>
+                    <th
+                      className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                      onClick={() => handleSort("startDate")}
+                    >
+                      Period {isPrivileged && <SortIcon col="startDate" sortKey={sortKey} sortDir={sortDir} />}
+                    </th>
                     <th className="text-left px-5 py-3">Days</th>
                     <th className="text-left px-5 py-3">Reason</th>
-                    <th className="text-left px-5 py-3">Status</th>
+                    <th
+                      className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                      onClick={() => handleSort("status")}
+                    >
+                      Status {isPrivileged && <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />}
+                    </th>
                     <th className="text-left px-5 py-3 min-w-[120px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {isLoading ? (
                     <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">Loading...</td></tr>
-                  ) : !requests || requests.length === 0 ? (
+                  ) : sortedRequests.length === 0 ? (
                     <tr><td colSpan={7} className="text-center py-10 text-muted-foreground">No leave requests found</td></tr>
-                  ) : requests.map((req: any, i: number) => (
+                  ) : sortedRequests.map((req: any, i: number) => (
                     <tr key={req.id} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
                       <td className="px-5 py-3 font-medium text-foreground">{req.employeeName}</td>
                       <td className="px-5 py-3 text-muted-foreground">

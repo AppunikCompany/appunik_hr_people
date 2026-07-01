@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { useEmployees, useDepartments, useDesignations, fetchApi } from "@/hooks/useApi";
+import { useEmployees, useDepartments, useDesignations, useCurrentUser, fetchApi } from "@/hooks/useApi";
 import { PageHeader, PageContainer } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,15 @@ import {
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatDate } from "@/lib/utils";
-import { Search, Eye, Edit2, Trash2 } from "lucide-react";
+import { Search, Eye, Edit2, Trash2, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { toast } from "sonner";
+
+function SortIcon({ col, sortKey, sortDir }: { col: string; sortKey: string; sortDir: "asc" | "desc" }) {
+  if (sortKey !== col) return <ChevronsUpDown className="w-3 h-3 ml-1 opacity-30 inline-block" />;
+  return sortDir === "asc"
+    ? <ChevronUp className="w-3 h-3 ml-1 inline-block" />
+    : <ChevronDown className="w-3 h-3 ml-1 inline-block" />;
+}
 
 const EMPLOYMENT_TYPES = [
   { value: "full_time", label: "Full Time" },
@@ -288,11 +295,21 @@ export default function Employees() {
   const [search, setSearch] = useState("");
   const [dept, setDept] = useState("");
   const [status, setStatus] = useState("");
+  const [sortKey, setSortKey] = useState<string>("joiningDate");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null);
   const [deleteEmployee, setDeleteEmployee] = useState<Employee | null>(null);
 
   const { data: employees, isLoading } = useEmployees();
   const { data: depts } = useDepartments();
+  const { data: currentUser } = useCurrentUser();
+  const isPrivileged = ["super_admin", "hr_admin"].includes(currentUser?.role ?? "");
+
+  const handleSort = (key: string) => {
+    if (!isPrivileged) return;
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("desc"); }
+  };
 
   const filtered = (employees as Employee[] ?? []).filter((emp) => {
     const q = search.toLowerCase();
@@ -305,6 +322,20 @@ export default function Employees() {
     const matchDept = !dept || emp.departmentId === dept;
     const matchStatus = !status || emp.status === status;
     return matchSearch && matchDept && matchStatus;
+  });
+
+  const sorted = [...filtered].sort((a, b) => {
+    let av: string, bv: string;
+    switch (sortKey) {
+      case "name": av = `${a.firstName} ${a.lastName}`; bv = `${b.firstName} ${b.lastName}`; break;
+      case "department": av = a.departmentName ?? ""; bv = b.departmentName ?? ""; break;
+      case "designation": av = a.designationName ?? ""; bv = b.designationName ?? ""; break;
+      case "status": av = a.status; bv = b.status; break;
+      case "joiningDate":
+      default: av = a.joiningDate; bv = b.joiningDate; break;
+    }
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return sortDir === "asc" ? cmp : -cmp;
   });
 
   return (
@@ -351,12 +382,37 @@ export default function Employees() {
           <table className="w-full text-sm min-w-[800px]">
             <thead>
               <tr className="bg-secondary text-xs uppercase tracking-wider text-muted-foreground">
-                <th className="text-left px-5 py-3">Employee</th>
+                <th
+                  className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                  onClick={() => handleSort("name")}
+                >
+                  Employee {isPrivileged && <SortIcon col="name" sortKey={sortKey} sortDir={sortDir} />}
+                </th>
                 <th className="text-left px-5 py-3">ID</th>
-                <th className="text-left px-5 py-3">Department</th>
-                <th className="text-left px-5 py-3">Designation</th>
-                <th className="text-left px-5 py-3">Joining Date</th>
-                <th className="text-left px-5 py-3">Status</th>
+                <th
+                  className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                  onClick={() => handleSort("department")}
+                >
+                  Department {isPrivileged && <SortIcon col="department" sortKey={sortKey} sortDir={sortDir} />}
+                </th>
+                <th
+                  className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                  onClick={() => handleSort("designation")}
+                >
+                  Designation {isPrivileged && <SortIcon col="designation" sortKey={sortKey} sortDir={sortDir} />}
+                </th>
+                <th
+                  className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                  onClick={() => handleSort("joiningDate")}
+                >
+                  Joining Date {isPrivileged && <SortIcon col="joiningDate" sortKey={sortKey} sortDir={sortDir} />}
+                </th>
+                <th
+                  className={`text-left px-5 py-3 ${isPrivileged ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+                  onClick={() => handleSort("status")}
+                >
+                  Status {isPrivileged && <SortIcon col="status" sortKey={sortKey} sortDir={sortDir} />}
+                </th>
                 <th className="text-left px-5 py-3 min-w-[100px]">Actions</th>
               </tr>
             </thead>
@@ -365,12 +421,12 @@ export default function Employees() {
                 <tr>
                   <td colSpan={7} className="text-center py-10 text-muted-foreground">Loading...</td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : sorted.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-10 text-muted-foreground">No employees found</td>
                 </tr>
               ) : (
-                filtered.map((emp, i) => (
+                sorted.map((emp, i) => (
                   <tr key={emp.id} className={i % 2 === 0 ? "bg-white" : "bg-background"}>
                     <td className="px-5 py-3">
                       <div>
@@ -416,7 +472,7 @@ export default function Employees() {
         </div>
 
         <div className="px-5 py-3 border-t border-border text-xs text-muted-foreground">
-          Showing {filtered.length} of {(employees as Employee[] ?? []).length} employees
+          Showing {sorted.length} of {(employees as Employee[] ?? []).length} employees
         </div>
       </div>
       )}
