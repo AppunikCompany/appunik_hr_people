@@ -19,6 +19,7 @@ import lettersRouter from "./letters";
 import documentsRouter from "./documents";
 import notificationsRouter from "./notifications";
 import zktecoPingRouter from "./zkteco";
+import biometricRouter from "./biometric";
 
 const router: IRouter = Router();
 
@@ -42,5 +43,6 @@ router.use(lettersRouter);
 router.use(documentsRouter);
 router.use(notificationsRouter);
 router.use(zktecoPingRouter);
+router.use(biometricRouter);
 
 export default router;

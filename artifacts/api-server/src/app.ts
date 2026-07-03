@@ -13,6 +13,7 @@ import { processOverduePendingDocLeaves, ensureLwpLeaveType } from "./routes/lea
 import { autoClockOutMissed, scheduleDailyIST } from "./routes/attendance";
 import { notifyForgottenClockIn, notifyForgottenClockOut, notifyBirthdaysAndAnniversaries } from "./lib/scheduledNotifications";
 import { runScheduledAutomations } from "./lib/automations";
+import { syncBiometricPunches, biometricConfig } from "./lib/biometricSync";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -58,6 +59,24 @@ scheduleDailyIST(9,  () => {                               // 9:00 AM  — birth
 }, 0);
 scheduleDailyIST(10, notifyForgottenClockIn, 15);           // 10:15 AM — forgot to clock in
 scheduleDailyIST(19, notifyForgottenClockOut, 15);          // 7:15 PM  — forgot to clock out
+
+// Biometric (EasyTime Pro) attendance sync — pull punches every 15 minutes.
+// Only runs when EASYTIME_URL / EASYTIME_USERNAME / EASYTIME_PASSWORD are set.
+if (biometricConfig().configured) {
+  const runBiometricSync = () =>
+    syncBiometricPunches()
+      .then((s) => {
+        if (!s.ok) console.error("[biometric] sync error:", s.error);
+        else console.log(`[biometric] sync: ${s.created} created, ${s.updated} updated, ${s.skippedUnmapped} unmapped`);
+      })
+      .catch((e) => console.error("[biometric] sync threw:", e));
+  // Kick off shortly after boot, then every 15 minutes.
+  setTimeout(runBiometricSync, 30_000);
+  setInterval(runBiometricSync, 15 * 60 * 1000);
+  console.log("[biometric] EasyTime Pro sync enabled (every 15 min)");
+} else {
+  console.log("[biometric] EasyTime Pro sync disabled (env not configured)");
+}
 
 // ZKTeco ADMS push — device sends plain-text punches, no auth header
 // Must be registered BEFORE the auth middleware router

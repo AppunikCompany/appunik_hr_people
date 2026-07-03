@@ -210,6 +210,123 @@ function RegularizationDialog({ open, onClose, date }: { open: boolean; onClose:
   );
 }
 
+// ── Biometric (EasyTime Pro) status panel — HR / super-admin only ──────────────
+function BiometricPanel() {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ["biometric-status"],
+    queryFn: () => fetchApi<any>("/attendance/biometric/status"),
+    refetchInterval: 60_000,
+  });
+
+  const syncMut = useMutation({
+    mutationFn: () => fetchApi<any>("/attendance/biometric/sync", { method: "POST" }),
+    onSuccess: (s: any) => {
+      qc.invalidateQueries({ queryKey: ["biometric-status"] });
+      qc.invalidateQueries({ queryKey: ["att-daily"] });
+      if (s?.ok) toast.success(`Synced — ${s.created} created, ${s.updated} updated${s.skippedUnmapped ? `, ${s.skippedUnmapped} unmapped` : ""}`);
+      else toast.error(s?.error ?? "Sync failed");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const testMut = useMutation({
+    mutationFn: () => fetchApi<any>("/attendance/biometric/test-connection"),
+    onSuccess: () => toast.success("Connection OK — credentials valid"),
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  if (isLoading) return <div className="text-center py-10 text-muted-foreground">Loading…</div>;
+
+  const configured = data?.configured;
+  const status = data?.status;
+
+  if (!configured) {
+    return (
+      <div className="bg-white border border-border rounded-lg shadow-sm p-6">
+        <div className="flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+          <div>
+            <p className="font-medium text-foreground">Biometric sync is not configured</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Set <code className="text-xs bg-secondary px-1 py-0.5 rounded">EASYTIME_URL</code>,{" "}
+              <code className="text-xs bg-secondary px-1 py-0.5 rounded">EASYTIME_USERNAME</code> and{" "}
+              <code className="text-xs bg-secondary px-1 py-0.5 rounded">EASYTIME_PASSWORD</code> in the server environment,
+              then redeploy. Once configured, punches from the fingerprint machine sync automatically every 15 minutes.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-sm text-muted-foreground">EasyTime Pro server</p>
+          <p className="font-mono text-sm text-foreground">{data?.serverUrl ?? "—"}</p>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
+            {testMut.isPending ? "Testing…" : "Test connection"}
+          </Button>
+          <Button size="sm" onClick={() => syncMut.mutate()} disabled={syncMut.isPending}>
+            {syncMut.isPending ? "Syncing…" : "Sync now"}
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { label: "Last run", value: status?.ranAt ? new Date(status.ranAt).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "Never", color: "text-foreground" },
+          { label: "Processed", value: status?.processed ?? 0, color: "text-foreground" },
+          { label: "Created", value: status?.created ?? 0, color: "text-green-600" },
+          { label: "Updated", value: status?.updated ?? 0, color: "text-blue-600" },
+        ].map((c) => (
+          <div key={c.label} className="bg-white border border-border rounded-lg px-4 py-3 shadow-sm">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">{c.label}</p>
+            <p className={`text-lg font-semibold mt-1 ${c.color}`}>{c.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {status?.lastPunchTime && (
+        <p className="text-sm text-muted-foreground">
+          Latest punch seen: <span className="font-mono text-foreground">{status.lastPunchTime}</span> (IST)
+        </p>
+      )}
+
+      {status?.error && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{status.error}</span>
+        </div>
+      )}
+
+      {status?.unmappedCodes?.length > 0 && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <p className="font-medium">
+            {status.unmappedCodes.length} device code(s) not matched to any employee
+          </p>
+          <p className="text-xs mt-1">
+            These punches were skipped. Add the matching <strong>Employee Code</strong> to each person (or fix it on the device) so they map:
+          </p>
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {status.unmappedCodes.map((c: string) => (
+              <span key={c} className="font-mono text-xs bg-white border border-amber-300 px-1.5 py-0.5 rounded">{c}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        Office punches sync automatically every 15 minutes. Biometric punches take priority over manual clock-ins for office (WFO) days; WFH stays manual.
+      </p>
+    </div>
+  );
+}
+
 export default function Attendance() {
   const [location, navigate] = useLocation();
   const [search, setSearch] = useState("");
@@ -220,6 +337,7 @@ export default function Attendance() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
   const [monthlySubTab, setMonthlySubTab] = useState(false);
   const [dailySubTab, setDailySubTab] = useState(false);
+  const [biometricSubTab, setBiometricSubTab] = useState(false);
   const [dailyDate, setDailyDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [rejectDialog, setRejectDialog] = useState<{ open: boolean; id: string; note: string }>({ open: false, id: "", note: "" });
 
@@ -319,26 +437,34 @@ export default function Attendance() {
         <TabsContent value="daily">
           <div className="flex gap-2 mb-4">
             <button
-              onClick={() => { setMonthlySubTab(false); setDailySubTab(false); }}
-              className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${!monthlySubTab && !dailySubTab ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-secondary"}`}
+              onClick={() => { setMonthlySubTab(false); setDailySubTab(false); setBiometricSubTab(false); }}
+              className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${!monthlySubTab && !dailySubTab && !biometricSubTab ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-secondary"}`}
             >
               Team Today
             </button>
             <button
-              onClick={() => { setDailySubTab(true); setMonthlySubTab(false); }}
+              onClick={() => { setDailySubTab(true); setMonthlySubTab(false); setBiometricSubTab(false); }}
               className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${dailySubTab ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-secondary"}`}
             >
               Daily View
             </button>
             <button
-              onClick={() => { setMonthlySubTab(true); setDailySubTab(false); }}
+              onClick={() => { setMonthlySubTab(true); setDailySubTab(false); setBiometricSubTab(false); }}
               className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${monthlySubTab ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-secondary"}`}
             >
               Monthly View
             </button>
+            <button
+              onClick={() => { setBiometricSubTab(true); setDailySubTab(false); setMonthlySubTab(false); }}
+              className={`px-4 py-1.5 text-sm rounded-md border transition-colors ${biometricSubTab ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:bg-secondary"}`}
+            >
+              Biometric
+            </button>
           </div>
 
-          {dailySubTab ? (
+          {biometricSubTab ? (
+            <BiometricPanel />
+          ) : dailySubTab ? (
             /* Daily View — pick any date, see everyone's clock-in/out */
             <>
               <div className="flex items-center gap-3 mb-4">

@@ -10,6 +10,8 @@ export const attendanceRecordsTable = mysqlTable("people_attendance_records", {
   clockIn: timestamp("clock_in"),
   clockOut: timestamp("clock_out"),
   type: varchar("type", { length: 20 }).notNull().default("wfo"),
+  // Origin of this record: "web" (manual clock-in), "biometric" (EasyTime Pro), "regularization"
+  source: varchar("source", { length: 20 }).notNull().default("web"),
   hoursWorked: double("hours_worked"),
   isLate: boolean("is_late").notNull().default(false),
   isHalfDay: boolean("is_half_day").notNull().default(false),
