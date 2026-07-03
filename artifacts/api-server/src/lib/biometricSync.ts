@@ -114,12 +114,14 @@ async function getToken(force = false): Promise<string> {
     throw new Error(`EasyTime auth failed (${res.status}): ${body.slice(0, 300)}`);
   }
 
-  const data = (await res.json()) as { token?: string };
-  if (!data.token) throw new Error("EasyTime auth response did not contain a token");
+  // Newer EasyTime Pro (SimpleJWT) returns {access, refresh}; older builds return {token}.
+  const data = (await res.json()) as { access?: string; token?: string };
+  const token = data.access ?? data.token;
+  if (!token) throw new Error("EasyTime auth response did not contain a token");
 
-  // BioTime JWTs are long-lived; cache for 50 minutes and refresh proactively.
-  cachedToken = { value: data.token, expiresAt: Date.now() + 50 * 60 * 1000 };
-  return data.token;
+  // Access tokens on this server expire in 5 minutes — cache for 4 and re-auth.
+  cachedToken = { value: token, expiresAt: Date.now() + 4 * 60 * 1000 };
+  return token;
 }
 
 // ── Transaction fetching ──────────────────────────────────────────────────────────
@@ -143,7 +145,7 @@ async function fetchTransactions(startTime: string): Promise<RawPunch[]> {
 
   for (let page = 0; url && page < MAX_PAGES; page++) {
     let res: Response = await fetch(url, {
-      headers: { authorization: `JWT ${token}`, accept: "application/json" },
+      headers: { authorization: `Bearer ${token}`, accept: "application/json" },
       signal: AbortSignal.timeout(30000),
     });
 
@@ -151,7 +153,7 @@ async function fetchTransactions(startTime: string): Promise<RawPunch[]> {
     if (res.status === 401) {
       const fresh = await getToken(true);
       res = await fetch(url, {
-        headers: { authorization: `JWT ${fresh}`, accept: "application/json" },
+        headers: { authorization: `Bearer ${fresh}`, accept: "application/json" },
         signal: AbortSignal.timeout(30000),
       });
     }
@@ -171,13 +173,17 @@ async function fetchTransactions(startTime: string): Promise<RawPunch[]> {
 }
 
 // ── Punch direction ────────────────────────────────────────────────────────────────
-// BioTime punch_state: 0/"0" = Check In, 1/"1" = Check Out, others = break/OT.
-// We treat 1 and 5 (OT Out) as "out"; everything else as "in".
-function isOutPunch(p: RawPunch): boolean {
-  const s = String(p.punch_state ?? "").trim();
-  if (s === "1" || s === "5") return true;
-  const disp = (p.punch_state_display ?? "").toLowerCase();
-  return disp.includes("out");
+// Direction is derived from TIME, not punch_state: many devices (including this
+// EasyTime Pro setup) report punch_state 255 ("none") for every punch. Earliest
+// punch of the day = clock-in, latest = clock-out. A single punch means the
+// person is still in the office (clockOut stays null until a later punch).
+
+// ── Employee-code matching ──────────────────────────────────────────────────────────
+// HR codes look like "EMP-015"; device enrollments are often just "15" or "015".
+// Normalize both sides to digits without leading zeros so they match either way.
+function normalizeCode(code: string): string {
+  const digits = code.replace(/\D/g, "").replace(/^0+/, "");
+  return digits || code.trim().toUpperCase();
 }
 
 // ── Main sync ────────────────────────────────────────────────────────────────────
@@ -207,15 +213,24 @@ export async function syncBiometricPunches(): Promise<SyncSummary> {
 
     const punches = await fetchTransactions(startTime);
 
-    // Preload employee map: employeeCode → id (+ existing record cache per day)
+    // Preload employee map. Codes match exactly first ("EMP-015"), then by
+    // normalized digits so a device enrollment of "15" also maps to "EMP-015".
     const employees = await db
       .select({ id: employeesTable.id, code: employeesTable.employeeCode })
       .from(employeesTable);
-    const codeToId = new Map(employees.map((e) => [String(e.code).trim(), e.id] as const));
+    const codeToId = new Map<string, string>();
+    for (const e of employees) codeToId.set(String(e.code).trim(), e.id);
+    for (const e of employees) {
+      const norm = normalizeCode(String(e.code));
+      if (!codeToId.has(norm)) codeToId.set(norm, e.id);
+    }
 
     const unmapped = new Set<string>();
     let maxPunch: Date | null = null;
 
+    // Group punches by (employee, IST date) — direction comes from time:
+    // earliest punch of the day = clock-in, latest = clock-out.
+    const byDay = new Map<string, { employeeId: string; date: string; first: Date; last: Date }>();
     for (const p of punches) {
       const empCode = String(p.emp_code ?? "").trim();
       const when = parseISTPunch(p.punch_time);
@@ -223,7 +238,7 @@ export async function syncBiometricPunches(): Promise<SyncSummary> {
       summary.processed++;
       if (!maxPunch || when > maxPunch) maxPunch = when;
 
-      const employeeId = codeToId.get(empCode);
+      const employeeId = codeToId.get(empCode) ?? codeToId.get(normalizeCode(empCode));
       if (!employeeId) {
         unmapped.add(empCode);
         summary.skippedUnmapped++;
@@ -231,20 +246,32 @@ export async function syncBiometricPunches(): Promise<SyncSummary> {
       }
 
       const date = istDate(when);
-      const out = isOutPunch(p);
+      const key = `${employeeId}|${date}`;
+      const g = byDay.get(key);
+      if (!g) byDay.set(key, { employeeId, date, first: when, last: when });
+      else {
+        if (when < g.first) g.first = when;
+        if (when > g.last) g.last = when;
+      }
+    }
 
+    for (const g of byDay.values()) {
       const [existing] = await db
         .select()
         .from(attendanceRecordsTable)
-        .where(and(eq(attendanceRecordsTable.employeeId, employeeId), eq(attendanceRecordsTable.date, date)))
+        .where(and(eq(attendanceRecordsTable.employeeId, g.employeeId), eq(attendanceRecordsTable.date, g.date)))
         .limit(1);
 
+      // Only one punch so far today → person is in the office, no clock-out yet.
+      const newIn: Date = g.first;
+      const newOut: Date | null = g.last > g.first ? g.last : null;
+
       if (!existing) {
+        const hoursWorked = newOut ? Math.max(0, (newOut.getTime() - newIn.getTime()) / 3_600_000) : null;
         await db.insert(attendanceRecordsTable).values({
-          employeeId, date, type: "wfo", source: "biometric",
-          clockIn: out ? null : when,
-          clockOut: out ? when : null,
-          isLate: false, isHalfDay: false,
+          employeeId: g.employeeId, date: g.date, type: "wfo", source: "biometric",
+          clockIn: newIn, clockOut: newOut,
+          hoursWorked, isLate: false, isHalfDay: hoursWorked != null && hoursWorked < 4,
         });
         summary.created++;
         continue;
@@ -253,24 +280,20 @@ export async function syncBiometricPunches(): Promise<SyncSummary> {
       // WFH stays manual — never overwrite a WFH record from a biometric punch.
       if (existing.type === "wfh") continue;
 
-      // Biometric wins for WFO: if this record was a manual web entry, take it over.
+      // Biometric wins for WFO: a manual web entry is replaced; an existing
+      // biometric record is merged (earliest in, latest out — idempotent).
       const takingOver = existing.source !== "biometric";
-      let clockIn = takingOver ? null : existing.clockIn;
-      let clockOut = takingOver ? null : existing.clockOut;
-
-      // Keep earliest in, latest out (idempotent).
-      if (out) {
-        if (!clockOut || when > new Date(clockOut)) clockOut = when;
-      } else {
-        if (!clockIn || when < new Date(clockIn)) clockIn = when;
+      let clockIn: Date = newIn;
+      let clockOut: Date | null = newOut;
+      if (!takingOver) {
+        if (existing.clockIn && new Date(existing.clockIn) < clockIn) clockIn = new Date(existing.clockIn);
+        if (existing.clockOut && (!clockOut || new Date(existing.clockOut) > clockOut)) clockOut = new Date(existing.clockOut);
       }
 
-      // Recompute derived fields when both ends are known.
       let hoursWorked = existing.hoursWorked;
       let isHalfDay = existing.isHalfDay;
-      if (clockIn && clockOut) {
-        const ms = new Date(clockOut).getTime() - new Date(clockIn).getTime();
-        hoursWorked = Math.max(0, ms / 3_600_000);
+      if (clockOut) {
+        hoursWorked = Math.max(0, (clockOut.getTime() - clockIn.getTime()) / 3_600_000);
         isHalfDay = hoursWorked < 4;
       }
 
