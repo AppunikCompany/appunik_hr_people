@@ -42,7 +42,7 @@ export const employeesTable = mysqlTable("people_employees", {
   zktecoMemberId: int("zkteco_member_id"),
   zktecoDisplayId: varchar("zkteco_display_id", { length: 20 }),
   role: varchar("role", { length: 50 }).notNull().default("employee"),
-  profileImageUrl: varchar("profile_image_url", { length: 500 }),
+  profileImageUrl: text("profile_image_url"),
   onboardingCompleted: boolean("onboarding_completed").notNull().default(false),
   onboardingCompletedAt: timestamp("onboarding_completed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

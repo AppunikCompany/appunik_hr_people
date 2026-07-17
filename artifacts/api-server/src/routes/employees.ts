@@ -12,7 +12,7 @@ import {
   leaveBalancesTable,
   leaveTypesTable,
 } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
 import { PRIVILEGED_ROLES, canReadEmployee } from "../lib/ownership";
@@ -292,10 +292,31 @@ router.get("/employees/:id", requireAuth, async (req, res): Promise<void> => {
 
 router.patch("/employees/:id", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
-    const [before] = await db.select().from(employeesTable).where(eq(employeesTable.id, (req.params.id as string)));
-    await db.update(employeesTable).set(req.body).where(eq(employeesTable.id, (req.params.id as string)));
-    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, (req.params.id as string)));
-    if (!emp) { res.status(404).json({ error: "Not found" }); return; }
+    const empId = req.params.id as string;
+    const [before] = await db.select().from(employeesTable).where(eq(employeesTable.id, empId));
+    if (!before) { res.status(404).json({ error: "Not found" }); return; }
+
+    // Validate Employee Code: if changed by HR/Super Admin, must be unique across the table
+    const body = req.body as Record<string, unknown>;
+    if (typeof body.employeeCode === "string") {
+      const newCode = body.employeeCode.trim().toUpperCase();
+      if (!newCode) { res.status(400).json({ error: "Employee Code cannot be empty" }); return; }
+      if (newCode !== before.employeeCode) {
+        const [conflict] = await db.select({ id: employeesTable.id }).from(employeesTable).where(eq(employeesTable.employeeCode, newCode));
+        if (conflict && conflict.id !== empId) {
+          res.status(409).json({ error: `Employee Code "${newCode}" is already in use by another employee` });
+          return;
+        }
+        body.employeeCode = newCode;
+      } else {
+        delete body.employeeCode;
+      }
+    }
+
+    if (Object.keys(body).length > 0) {
+      await db.update(employeesTable).set(body).where(eq(employeesTable.id, empId));
+    }
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, empId));
 
     // AM-10: When employee moves to notice/resigned/terminated, fire offboarding + asset return event
     if (before && before.status === "active" && (emp.status === "resigned" || emp.status === "terminated" || emp.status === "notice")) {
@@ -388,10 +409,139 @@ router.get("/employees/:id/education", requireAuth, async (req, res): Promise<vo
   }
 });
 
+router.post("/employees/:id/education", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const { id } = req.params as { id: string };
+    const { institution, degree, fieldOfStudy, startYear, endYear, grade, certificateUrl } = req.body as {
+      institution?: string; degree?: string; fieldOfStudy?: string; startYear?: string; endYear?: string | null; grade?: string | null; certificateUrl?: string | null;
+    };
+    if (!institution?.trim() || !degree?.trim() || !startYear?.trim()) {
+      res.status(400).json({ error: "Institution, degree and start year are required" });
+      return;
+    }
+    const eduId = crypto.randomUUID();
+    await db.insert(employeeEducationTable).values({
+      id: eduId, employeeId: id,
+      institution: institution.trim(), degree: degree.trim(),
+      fieldOfStudy: fieldOfStudy?.trim() ?? null,
+      startYear: startYear.trim(),
+      endYear: endYear?.trim() ?? null,
+      grade: grade?.trim() ?? null,
+      certificateUrl: certificateUrl?.trim() ?? null,
+    });
+    const [row] = await db.select().from(employeeEducationTable).where(eq(employeeEducationTable.id, eduId));
+    res.status(201).json(row);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.patch("/employees/:id/education/:eduId", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const { id, eduId } = req.params as { id: string; eduId: string };
+    const updates = req.body as Record<string, string | null>;
+    const sanitize = (v: unknown) => (typeof v === "string" ? v.trim() || null : v ?? null);
+    const patch: Record<string, unknown> = {};
+    for (const k of ["institution", "degree", "fieldOfStudy", "startYear", "endYear", "grade", "certificateUrl"]) {
+      if (k in updates) patch[k] = sanitize(updates[k]);
+    }
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: "No editable fields supplied" });
+      return;
+    }
+    await db.update(employeeEducationTable).set(patch).where(and(
+      eq(employeeEducationTable.id, eduId),
+      eq(employeeEducationTable.employeeId, id),
+    ));
+    const [row] = await db.select().from(employeeEducationTable).where(eq(employeeEducationTable.id, eduId));
+    if (!row) { res.status(404).json({ error: "Education entry not found" }); return; }
+    res.json(row);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+router.delete("/employees/:id/education/:eduId", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const { id, eduId } = req.params as { id: string; eduId: string };
+    await db.delete(employeeEducationTable).where(and(
+      eq(employeeEducationTable.id, eduId),
+      eq(employeeEducationTable.employeeId, id),
+    ));
+    res.status(204).send();
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 router.get("/employees/:id/exit", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
   try {
     const [row] = await db.select().from(exitRequestsTable).where(eq(exitRequestsTable.employeeId, req.params.id as string));
     res.json(row ?? null);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// HR-only: create an exit interview record for an employee (allowed without a separate offboarding initiation)
+router.post("/employees/:id/exit", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const { id } = req.params as { id: string };
+    const { resignationDate, lastWorkingDay, reason, status, managerComment, exitInterviewNotes } = req.body as {
+      resignationDate?: string; lastWorkingDay?: string;
+      reason?: string; status?: string;
+      managerComment?: string; exitInterviewNotes?: string;
+    };
+    if (!resignationDate?.trim() || !lastWorkingDay?.trim()) {
+      res.status(400).json({ error: "Resignation date and last working day are required" });
+      return;
+    }
+    const [existing] = await db.select().from(exitRequestsTable).where(eq(exitRequestsTable.employeeId, id));
+    if (existing) {
+      res.status(409).json({ error: "An exit interview already exists for this employee" });
+      return;
+    }
+    const exitId = crypto.randomUUID();
+    await db.insert(exitRequestsTable).values({
+      id: exitId, employeeId: id,
+      resignationDate: resignationDate.trim(),
+      lastWorkingDay: lastWorkingDay.trim(),
+      reason: reason?.trim() ?? null,
+      status: status?.trim() ?? "approved",
+      managerComment: managerComment?.trim() ?? null,
+      exitInterviewNotes: exitInterviewNotes?.trim() ?? null,
+    });
+    const [row] = await db.select().from(exitRequestsTable).where(eq(exitRequestsTable.id, exitId));
+    res.status(201).json(row);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// HR-only: edit the exit interview record (notes, reason, status update, etc.)
+router.patch("/employees/:id/exit", requireAuth, requireRole("super_admin", "hr_admin"), async (req, res): Promise<void> => {
+  try {
+    const { id } = req.params as { id: string };
+    const updates = req.body as Record<string, string | null>;
+    const patch: Record<string, unknown> = {};
+    for (const k of ["resignationDate", "lastWorkingDay", "reason", "status", "managerComment", "exitInterviewNotes"]) {
+      if (k in updates) {
+        const v = updates[k];
+        patch[k] = typeof v === "string" ? (v.trim() === "" ? null : v.trim()) : v ?? null;
+      }
+    }
+    if (Object.keys(patch).length === 0) {
+      res.status(400).json({ error: "No editable fields supplied" });
+      return;
+    }
+    const [existing] = await db.select().from(exitRequestsTable).where(eq(exitRequestsTable.employeeId, id));
+    if (!existing) {
+      res.status(404).json({ error: "No exit interview on record. Use POST to create one." });
+      return;
+    }
+    await db.update(exitRequestsTable).set(patch).where(eq(exitRequestsTable.employeeId, id));
+    const [row] = await db.select().from(exitRequestsTable).where(eq(exitRequestsTable.employeeId, id));
+    res.json(row);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }

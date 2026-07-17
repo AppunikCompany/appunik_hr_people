@@ -168,6 +168,23 @@ export default function SelfService() {
             {profile && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="bg-white border border-border rounded-lg shadow-sm p-6">
+                  <div className="flex items-center gap-4 mb-5">
+                    {profile.profileImageUrl ? (
+                      <img
+                        src={profile.profileImageUrl}
+                        alt={`${profile.firstName} ${profile.lastName}`}
+                        className="w-16 h-16 rounded-full object-cover border border-border bg-secondary"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-secondary flex items-center justify-center text-foreground text-xl font-bold">
+                        {profile.firstName?.[0]}{profile.lastName?.[0]}
+                      </div>
+                    )}
+                    <div>
+                      <h3 className="text-base font-semibold text-foreground">{profile.firstName} {profile.lastName}</h3>
+                      <p className="text-xs text-muted-foreground font-mono mt-0.5">{profile.employeeCode}</p>
+                    </div>
+                  </div>
                   <h3 className="text-sm font-semibold text-foreground mb-4">Personal Information</h3>
                   <dl className="space-y-3">
                     {[

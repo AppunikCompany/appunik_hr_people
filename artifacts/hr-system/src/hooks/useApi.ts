@@ -118,6 +118,7 @@ export interface Employee {
   userId?: string | null;
   workLocation?: string | null;
   profilePhoto?: string | null;
+  profileImageUrl?: string | null;
   zktecoMemberId?: number | null;
   zktecoDisplayId?: string | null;
   createdAt: string;

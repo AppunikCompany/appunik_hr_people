@@ -44,6 +44,30 @@ router.patch("/me/personal-details", requireAuth, async (req, res): Promise<void
   }
 });
 
+// PATCH /me/profile-image
+// Employees may set or update their own profile photo (data URL or external URL).
+router.patch("/me/profile-image", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const userId = req.user!.id;
+    const { profileImageUrl } = req.body as { profileImageUrl?: string | null };
+    if (typeof profileImageUrl !== "string") {
+      res.status(400).json({ error: "profileImageUrl must be a string" });
+      return;
+    }
+    const trimmed = profileImageUrl.trim();
+    if (trimmed.length > 5_000_000) {
+      res.status(413).json({ error: "Image is too large. Use a URL or compress the file." });
+      return;
+    }
+    await db.update(employeesTable)
+      .set({ profileImageUrl: trimmed === "" ? null : trimmed })
+      .where(eq(employeesTable.userId, userId));
+    res.json({ ok: true, profileImageUrl: trimmed === "" ? null : trimmed });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 // GET /me/experience
 router.get("/me/experience", requireAuth, async (req, res): Promise<void> => {
   try {

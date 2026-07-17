@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { formatDate } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Edit2, Trash2, Plus, Monitor, Lock } from "lucide-react";
+import { Edit2, Trash2, Plus, Monitor, Lock, Camera, Save, Pencil, GraduationCap } from "lucide-react";
 import { toast } from "sonner";
 
 const EQUIPMENT_TYPES: Record<string, string> = {
@@ -52,6 +52,41 @@ const SOURCES_OF_HIRE = [
   "LinkedIn", "Indeed", "Naukri", "Referral", "Campus Recruitment",
   "Job Fair", "Company Website", "Recruiter", "Other",
 ];
+
+function calculateAppunikTenure(fromDateStr: string | null | undefined): string {
+  if (!fromDateStr) return "—";
+  const from = new Date(fromDateStr);
+  if (isNaN(from.getTime())) return "—";
+  const now = new Date();
+  let years = now.getFullYear() - from.getFullYear();
+  let months = now.getMonth() - from.getMonth();
+  let days = now.getDate() - from.getDate();
+  if (days < 0) {
+    months -= 1;
+    const prevMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    days += prevMonth.getDate();
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+  const parts: string[] = [];
+  if (years > 0) parts.push(`${years} year${years === 1 ? "" : "s"}`);
+  if (months > 0) parts.push(`${months} month${months === 1 ? "" : "s"}`);
+  if (parts.length === 0) {
+    parts.push(days > 0 ? `${days} day${days === 1 ? "" : "s"}` : "Less than a day");
+  }
+  return parts.join(", ");
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
 
 export default function EmployeeDetail() {
   const [, params] = useRoute("/employees/:id");
@@ -105,8 +140,97 @@ export default function EmployeeDetail() {
   const [addDocOpen, setAddDocOpen] = useState(false);
   const [docForm, setDocForm] = useState({ documentType: "", fileName: "", fileUrl: "", expiryDate: "" });
 
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const handlePhotoChange = async (file: File | null) => {
+    if (!file || !id) return;
+    if (!file.type.startsWith("image/")) { toast.error("Please select an image file"); return; }
+    if (file.size > 4_000_000) { toast.error("Image must be smaller than 4 MB"); return; }
+    setPhotoUploading(true);
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      await updateMutation.mutateAsync({ ...editForm, profileImageUrl: dataUrl });
+      // Refetch the employee so the avatar updates immediately
+      qc.invalidateQueries({ queryKey: ["employee", id] });
+      toast.success("Photo updated");
+    } catch (e: any) {
+      toast.error(e.message ?? "Failed to update photo");
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const [eduDialogOpen, setEduDialogOpen] = useState(false);
+  const [eduEditing, setEduEditing] = useState<any | null>(null);
+  const [eduForm, setEduForm] = useState({ institution: "", degree: "", fieldOfStudy: "", startYear: "", endYear: "", grade: "", certificateUrl: "" });
+
+  const openAddEdu = () => { setEduEditing(null); setEduForm({ institution: "", degree: "", fieldOfStudy: "", startYear: "", endYear: "", grade: "", certificateUrl: "" }); setEduDialogOpen(true); };
+  const openEditEdu = (edu: any) => { setEduEditing(edu); setEduForm({
+    institution: edu.institution ?? "",
+    degree: edu.degree ?? "",
+    fieldOfStudy: edu.fieldOfStudy ?? "",
+    startYear: edu.startYear ?? "",
+    endYear: edu.endYear ?? "",
+    grade: edu.grade ?? "",
+    certificateUrl: edu.certificateUrl ?? "",
+  }); setEduDialogOpen(true); };
+
+  const addEduMutation = useMutation({
+    mutationFn: () => fetchApi(`/employees/${id}/education`, { method: "POST", body: JSON.stringify(eduForm) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-education", id] }); setEduDialogOpen(false); toast.success("Education added"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateEduMutation = useMutation({
+    mutationFn: () => fetchApi(`/employees/${id}/education/${eduEditing.id}`, { method: "PATCH", body: JSON.stringify(eduForm) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-education", id] }); setEduDialogOpen(false); toast.success("Education updated"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const deleteEduMutation = useMutation({
+    mutationFn: (eduId: string) => fetchApi(`/employees/${id}/education/${eduId}`, { method: "DELETE" }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-education", id] }); toast.success("Removed"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const [exitDialogOpen, setExitDialogOpen] = useState(false);
+  const [exitForm, setExitForm] = useState({ resignationDate: "", lastWorkingDay: "", reason: "", status: "approved", managerComment: "", exitInterviewNotes: "" });
+
+  const openAddExit = () => {
+    setExitForm({
+      resignationDate: emp?.resignationDate ?? "",
+      lastWorkingDay: emp?.lastWorkingDay ?? "",
+      reason: "",
+      status: "approved",
+      managerComment: "",
+      exitInterviewNotes: "",
+    });
+    setExitDialogOpen(true);
+  };
+  const openEditExit = () => {
+    const d: any = exitData ?? {};
+    setExitForm({
+      resignationDate: d.resignationDate ?? "",
+      lastWorkingDay: d.lastWorkingDay ?? "",
+      reason: d.reason ?? "",
+      status: d.status ?? "approved",
+      managerComment: d.managerComment ?? "",
+      exitInterviewNotes: d.exitInterviewNotes ?? "",
+    });
+    setExitDialogOpen(true);
+  };
+
+  const createExitMutation = useMutation({
+    mutationFn: () => fetchApi(`/employees/${id}/exit`, { method: "POST", body: JSON.stringify(exitForm) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-exit", id] }); setExitDialogOpen(false); toast.success("Exit interview saved"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateExitMutation = useMutation({
+    mutationFn: () => fetchApi(`/employees/${id}/exit`, { method: "PATCH", body: JSON.stringify(exitForm) }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["employee-exit", id] }); setExitDialogOpen(false); toast.success("Exit interview updated"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const openEdit = () => {
     setEditForm({
+      employeeCode: emp?.employeeCode ?? "",
       firstName: emp?.firstName ?? "",
       lastName: emp?.lastName ?? "",
       email: emp?.email ?? "",
@@ -140,6 +264,7 @@ export default function EmployeeDetail() {
       aadhaarNumber: (emp as any)?.aadhaarNumber ?? "",
       zktecoDisplayId: emp?.zktecoDisplayId ?? "",
       zktecoMemberId: emp?.zktecoMemberId ?? null,
+      profileImageUrl: (emp as any)?.profileImageUrl ?? "",
     });
     setEditOpen(true);
   };
@@ -194,6 +319,38 @@ export default function EmployeeDetail() {
           </div>
         }
       />
+
+      <div className="mb-6 flex items-center gap-5">
+        <div className="relative group">
+          {emp.profileImageUrl ? (
+            <img
+              src={emp.profileImageUrl}
+              alt={`${emp.firstName} ${emp.lastName}`}
+              className="w-20 h-20 rounded-full object-cover border border-border bg-secondary"
+            />
+          ) : (
+            <div className="w-20 h-20 rounded-full bg-secondary flex items-center justify-center text-foreground text-2xl font-bold border border-border">
+              {emp.firstName?.[0]}{emp.lastName?.[0]}
+            </div>
+          )}
+          {isHR && (
+            <label className="absolute inset-0 rounded-full flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+              <Camera className="w-5 h-5 text-white" />
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={photoUploading}
+                onChange={(e) => handlePhotoChange(e.target.files?.[0] ?? null)}
+              />
+            </label>
+          )}
+        </div>
+        <div className="text-xs text-muted-foreground">
+          <p className="font-medium text-foreground">{emp.employeeCode}</p>
+          {isHR && <p className="mt-1">Hover avatar to update photo (HR only).</p>}
+        </div>
+      </div>
 
       <Tabs defaultValue="profile">
         <TabsList className="mb-6 flex-wrap h-auto gap-1">
@@ -260,6 +417,7 @@ export default function EmployeeDetail() {
             <Section title="Dates & Status">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
                 <Detail label="Joining Date" value={formatDate(emp.joiningDate)} />
+                <Detail label="AppUnik Tenure" value={calculateAppunikTenure(emp.joiningDate)} />
                 <Detail label="Probation End" value={formatDate(emp.probationEndDate)} />
                 <Detail label="Status" value={<StatusBadge status={emp.status} />} />
                 {emp.lastWorkingDay && <Detail label="Last Working Day" value={formatDate(emp.lastWorkingDay)} />}
@@ -290,17 +448,37 @@ export default function EmployeeDetail() {
         {/* Education */}
         <TabsContent value="education">
           <div className="bg-white border border-border rounded-lg shadow-sm overflow-hidden">
+            <div className="flex justify-between items-center px-5 py-3 border-b border-border">
+              <h3 className="text-sm font-semibold flex items-center gap-1.5"><GraduationCap className="w-4 h-4 text-muted-foreground" /> Education</h3>
+              {isHR && (
+                <Button size="sm" onClick={openAddEdu}>
+                  <Plus className="w-4 h-4 mr-1" /> Add Education
+                </Button>
+              )}
+            </div>
             {(education as any[]).length === 0 ? (
               <p className="text-center py-12 text-sm text-muted-foreground">No education details added yet.</p>
             ) : (
               <div className="divide-y divide-border">
                 {(education as any[]).map((edu: any) => (
-                  <div key={edu.id} className="px-6 py-4">
-                    <p className="font-medium text-sm">{edu.degree}{edu.fieldOfStudy ? ` in ${edu.fieldOfStudy}` : ""}</p>
-                    <p className="text-sm text-muted-foreground mt-0.5">{edu.institution}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {edu.startYear}{edu.endYear ? ` – ${edu.endYear}` : ""}{edu.grade ? ` · ${edu.grade}` : ""}
-                    </p>
+                  <div key={edu.id} className="px-6 py-4 flex justify-between items-start gap-4">
+                    <div>
+                      <p className="font-medium text-sm">{edu.degree}{edu.fieldOfStudy ? ` in ${edu.fieldOfStudy}` : ""}</p>
+                      <p className="text-sm text-muted-foreground mt-0.5">{edu.institution}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {edu.startYear}{edu.endYear ? ` – ${edu.endYear}` : ""}{edu.grade ? ` · ${edu.grade}` : ""}
+                      </p>
+                    </div>
+                    {isHR && (
+                      <div className="flex gap-1 shrink-0">
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEditEdu(edu)}>
+                          <Pencil className="w-3.5 h-3.5" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:text-red-600 hover:bg-red-50" onClick={() => deleteEduMutation.mutate(edu.id)} disabled={deleteEduMutation.isPending}>
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -332,8 +510,23 @@ export default function EmployeeDetail() {
         {isHR && (
           <TabsContent value="exit">
             <div className="bg-white border border-border rounded-lg shadow-sm p-6">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-5 p-2 bg-amber-50 border border-amber-200 rounded-md">
+                <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>HR Admins and Super Admins only — employees cannot view or edit this tab.</span>
+              </div>
+              <div className="flex justify-end mb-4">
+                {exitData ? (
+                  <Button size="sm" onClick={openEditExit}>
+                    <Pencil className="w-3.5 h-3.5 mr-1" /> Edit Exit Interview
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={openAddExit}>
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Add Exit Interview
+                  </Button>
+                )}
+              </div>
               {!exitData ? (
-                <p className="text-center py-8 text-sm text-muted-foreground">No exit request on record for this employee.</p>
+                <p className="text-center py-8 text-sm text-muted-foreground">No exit interview on record for this employee.</p>
               ) : (
                 <div className="space-y-5">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
@@ -464,15 +657,29 @@ export default function EmployeeDetail() {
         <DialogContent className="max-w-2xl" onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
           <DialogHeader><DialogTitle>Edit Employee</DialogTitle></DialogHeader>
           <div className="max-h-[72vh] overflow-y-auto pr-1 space-y-6 py-1">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground p-2 bg-amber-50 border border-amber-200 rounded-md">
+              <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>This dialog is restricted to HR Admins and Super Admins. Employees cannot view or edit any field here.</span>
+            </div>
 
             <FormSection title="Basic Info">
               <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2">
+                  <Label className="flex items-center gap-1.5">Employee Code *<Lock className="w-3 h-3 text-amber-600" /></Label>
+                  <Input value={editForm.employeeCode ?? ""} onChange={e => setEdit("employeeCode", e.target.value.toUpperCase())} className="mt-1 font-mono" placeholder="EMP-001" />
+                  <p className="text-xs text-muted-foreground mt-1">Editable only by HR Admins and Super Admins — employees cannot change this.</p>
+                </div>
                 <div><Label>First Name *</Label><Input value={editForm.firstName ?? ""} onChange={e => setEdit("firstName", e.target.value)} className="mt-1" /></div>
                 <div><Label>Last Name *</Label><Input value={editForm.lastName ?? ""} onChange={e => setEdit("lastName", e.target.value)} className="mt-1" /></div>
                 <div className="col-span-2"><Label>Company Email *</Label><Input type="email" value={editForm.email ?? ""} onChange={e => setEdit("email", e.target.value)} className="mt-1" /></div>
                 <div><Label>Mobile</Label><Input placeholder="+91 98765 43210" value={editForm.phone ?? ""} onChange={e => setEdit("phone", e.target.value)} className="mt-1" /></div>
                 <div><Label>Work Phone</Label><Input placeholder="+91 22 1234 5678" value={editForm.workPhone ?? ""} onChange={e => setEdit("workPhone", e.target.value)} className="mt-1" /></div>
                 <div className="col-span-2"><Label>Personal Email</Label><Input type="email" placeholder="personal@example.com" value={editForm.personalEmail ?? ""} onChange={e => setEdit("personalEmail", e.target.value)} className="mt-1" /></div>
+                <div className="col-span-2">
+                  <Label>Profile Photo URL</Label>
+                  <Input placeholder="https://... or paste a base64 data URL" value={editForm.profileImageUrl ?? ""} onChange={e => setEdit("profileImageUrl", e.target.value)} className="mt-1" />
+                  <p className="text-xs text-muted-foreground mt-1">Or hover the avatar above to upload a photo directly.</p>
+                </div>
               </div>
             </FormSection>
 
@@ -621,6 +828,10 @@ export default function EmployeeDetail() {
                   toast.error("Name and email are required");
                   return;
                 }
+                if (!editForm.employeeCode?.trim()) {
+                  toast.error("Employee Code is required (HR Admin / Super Admin only)");
+                  return;
+                }
                 updateMutation.mutate(editForm);
               }}
               disabled={updateMutation.isPending}
@@ -659,6 +870,103 @@ export default function EmployeeDetail() {
             <Button variant="outline" onClick={() => setAddDocOpen(false)}>Cancel</Button>
             <Button onClick={() => { if (!docForm.documentType || !docForm.fileName || !docForm.fileUrl) { toast.error("Document type, name, and URL are required"); return; } addDocMutation.mutate({ ...docForm, expiryDate: docForm.expiryDate || null }); }} disabled={addDocMutation.isPending}>
               {addDocMutation.isPending ? "Adding..." : "Add Document"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Education Dialog (Add / Edit) */}
+      <Dialog open={eduDialogOpen} onOpenChange={setEduDialogOpen}>
+        <DialogContent className="max-w-lg" onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>{eduEditing ? "Edit Education" : "Add Education"}</DialogTitle></DialogHeader>
+          <div className="space-y-3 py-1">
+            <div><Label>Institution *</Label><Input value={eduForm.institution} onChange={e => setEduForm(f => ({ ...f, institution: e.target.value }))} className="mt-1" placeholder="e.g. IIT Bombay" /></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Degree *</Label><Input value={eduForm.degree} onChange={e => setEduForm(f => ({ ...f, degree: e.target.value }))} className="mt-1" placeholder="e.g. B.Tech" /></div>
+              <div><Label>Field of Study</Label><Input value={eduForm.fieldOfStudy} onChange={e => setEduForm(f => ({ ...f, fieldOfStudy: e.target.value }))} className="mt-1" placeholder="e.g. Computer Science" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Start Year *</Label><Input maxLength={4} value={eduForm.startYear} onChange={e => setEduForm(f => ({ ...f, startYear: e.target.value }))} className="mt-1" placeholder="e.g. 2018" /></div>
+              <div><Label>End Year</Label><Input maxLength={4} value={eduForm.endYear} onChange={e => setEduForm(f => ({ ...f, endYear: e.target.value }))} className="mt-1" placeholder="e.g. 2022" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Grade / CGPA</Label><Input value={eduForm.grade} onChange={e => setEduForm(f => ({ ...f, grade: e.target.value }))} className="mt-1" placeholder="e.g. 8.5 CGPA" /></div>
+              <div><Label>Certificate URL</Label><Input value={eduForm.certificateUrl} onChange={e => setEduForm(f => ({ ...f, certificateUrl: e.target.value }))} className="mt-1" placeholder="https://..." /></div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEduDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!eduForm.institution?.trim() || !eduForm.degree?.trim() || !eduForm.startYear?.trim()) {
+                  toast.error("Institution, degree and start year are required");
+                  return;
+                }
+                if (eduEditing) updateEduMutation.mutate();
+                else addEduMutation.mutate();
+              }}
+              disabled={addEduMutation.isPending || updateEduMutation.isPending}
+            >
+              <Save className="w-3.5 h-3.5 mr-1" />
+              {addEduMutation.isPending || updateEduMutation.isPending ? "Saving..." : (eduEditing ? "Save Changes" : "Add Education")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Exit Interview Dialog (Add / Edit) — HR Admin only */}
+      <Dialog open={exitDialogOpen} onOpenChange={setExitDialogOpen}>
+        <DialogContent className="max-w-2xl" onInteractOutside={(e) => e.preventDefault()} onPointerDownOutside={(e) => e.preventDefault()}>
+          <DialogHeader><DialogTitle>{exitData ? "Edit Exit Interview" : "Add Exit Interview"}</DialogTitle></DialogHeader>
+          <div className="space-y-4 py-1 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground p-2 bg-amber-50 border border-amber-200 rounded-md">
+              <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>Only HR Admins and Super Admins can create or edit exit interviews.</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><Label>Resignation Date *</Label><Input type="date" max="9999-12-31" value={exitForm.resignationDate} onChange={e => setExitForm(f => ({ ...f, resignationDate: e.target.value }))} className="mt-1" /></div>
+              <div><Label>Last Working Day *</Label><Input type="date" max="9999-12-31" value={exitForm.lastWorkingDay} onChange={e => setExitForm(f => ({ ...f, lastWorkingDay: e.target.value }))} className="mt-1" /></div>
+            </div>
+            <div>
+              <Label>Status</Label>
+              <Select value={exitForm.status} onValueChange={v => setExitForm(f => ({ ...f, status: v }))}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Reason for Leaving</Label>
+              <Textarea rows={3} value={exitForm.reason} onChange={e => setExitForm(f => ({ ...f, reason: e.target.value }))} className="mt-1" placeholder="What was the employee's stated reason?" />
+            </div>
+            <div>
+              <Label>Manager Comment</Label>
+              <Textarea rows={3} value={exitForm.managerComment} onChange={e => setExitForm(f => ({ ...f, managerComment: e.target.value }))} className="mt-1" placeholder="Notes from the reporting manager" />
+            </div>
+            <div>
+              <Label>Exit Interview Notes</Label>
+              <Textarea rows={5} value={exitForm.exitInterviewNotes} onChange={e => setExitForm(f => ({ ...f, exitInterviewNotes: e.target.value }))} className="mt-1" placeholder="Notes captured during the exit interview with HR" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExitDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!exitForm.resignationDate || !exitForm.lastWorkingDay) {
+                  toast.error("Resignation date and last working day are required");
+                  return;
+                }
+                if (exitData) updateExitMutation.mutate();
+                else createExitMutation.mutate();
+              }}
+              disabled={createExitMutation.isPending || updateExitMutation.isPending}
+            >
+              <Save className="w-3.5 h-3.5 mr-1" />
+              {createExitMutation.isPending || updateExitMutation.isPending ? "Saving..." : (exitData ? "Save Changes" : "Create Exit Interview")}
             </Button>
           </DialogFooter>
         </DialogContent>
