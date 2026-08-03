@@ -66,7 +66,9 @@ function DayTimeline({ record }: { record: any }) {
 
 function AttendanceRow({ r, onRegularize }: { r: any; onRegularize: (date: string) => void }) {
   const [expanded, setExpanded] = useState(false);
-  const hasBreaks = r.type === "wfo" && r.clockIn;
+  // Show the expandable timeline whenever there's something to show — WFO or WFH,
+  // as long as a clock-in/out or an away/back (break) entry exists for the day.
+  const hasBreaks = !!r.clockIn || !!r.clockOut || (r.breaks?.length ?? 0) > 0;
   return (
     <>
       <tr className="border-b border-secondary hover:bg-background cursor-pointer" onClick={() => hasBreaks && setExpanded(!expanded)}>
