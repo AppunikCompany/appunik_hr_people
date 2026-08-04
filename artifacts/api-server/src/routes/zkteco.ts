@@ -4,36 +4,28 @@
  * The device pushes punch records automatically to /iclock/cdata.
  * Configure on the device: Comm → Cloud Server → Server = <this-server-ip>, Port = 3001
  *
- * Punch records are written directly to the existing attendance_records table.
- * No ZKTeco-specific UI — punches appear as normal attendance entries.
+ * Punches are stored as raw rows in biometricPunchLogsTable. Attendance is
+ * re-derived from those punches (same pipeline as EasyTime Pro API poll).
+ * This handler does NOT write to attendanceRecordsTable directly.
  */
 
 import { Router, type IRouter, type Request, type Response } from "express";
-import { db } from "@workspace/db";
 import {
-  zktecoPunchLogsTable,
-  attendanceRecordsTable,
-  employeesTable,
-} from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+  storeRawPunch,
+  nextAdmsEasyTimeId,
+  parseISTPunch,
+  reDeriveAttendanceForDay,
+  buildEmployeeCodeMap,
+  resolveEmployeeId,
+} from "../lib/biometricSync";
 
 const router: IRouter = Router();
 
-// ZKTeco inout code → punch direction
-const INOUT: Record<number, "in" | "out"> = {
-  0: "in",   // Check In
-  1: "out",  // Check Out
-  2: "out",  // Break Out
-  3: "in",   // Break In
-  4: "in",   // OT In
-  5: "out",  // OT Out
-};
-
-const VERIFY: Record<number, string> = {
-  1: "fingerprint",
-  3: "password",
-  4: "card",
-  15: "face",
+const VERIFY: Record<number, number> = {
+  1: 1,   // fingerprint
+  3: 3,   // password
+  4: 4,   // card
+  15: 15, // face
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,7 +35,6 @@ export async function handleAdmsPush(req: Request, res: Response) {
   const { table } = req.query as Record<string, string>;
 
   // ── Device options request (GET with no table param) ─────────────────────
-  // Device sends this on startup to get server time and sync settings
   if (req.method === "GET" && !table) {
     console.log(`[ZKTeco] Device handshake from ${req.ip} | UA: ${req.headers["user-agent"] ?? "none"}`);
     res.set("Content-Type", "text/plain");
@@ -65,110 +56,73 @@ export async function handleAdmsPush(req: Request, res: Response) {
 
   // ── Attendance log push (POST, table=ATTLOG) ──────────────────────────────
   if (table === "ATTLOG") {
-    // Body format per line: MEMBERNO\tDATETIME\tVERIFY\tINOUT\tWORKCODE
-    // Device may send as text/plain OR application/x-www-form-urlencoded
     let body: string = "";
     if (typeof req.body === "string") {
       body = req.body;
     } else if (req.body && typeof req.body === "object") {
-      // urlencoded parser turned it into an object — rejoin keys
       body = Object.keys(req.body).join("\n");
     }
     console.log(`[ZKTeco] POST ATTLOG — Content-Type: ${req.headers["content-type"] ?? "none"} | body length: ${body.length} | body: ${JSON.stringify(body.slice(0, 200))}`);
-    const lines = body.split("\n").map(l => l.trim()).filter(Boolean);
+    const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
+
+    const codeMap = await buildEmployeeCodeMap();
+    const affected = new Map<string, { employeeId: string; date: string }>();
 
     for (const line of lines) {
       try {
         const parts = line.split("\t");
         if (parts.length < 2) continue;
 
-        const memberId    = parseInt(parts[0] ?? "0", 10);
-        const punchTime   = (parts[1] ?? "").trim();              // "YYYY-MM-DD HH:MM:SS"
-        const verifyCode  = parseInt(parts[2] ?? "1",  10);
-        const inOutCode   = parseInt(parts[3] ?? "0",  10);
+        // Store emp code as string — do NOT parseInt (codes like MEM30, JAYESH)
+        const empCode = (parts[0] ?? "").trim();
+        const punchTimeStr = (parts[1] ?? "").trim(); // "YYYY-MM-DD HH:MM:SS" IST
+        const verifyCode = parseInt(parts[2] ?? "1", 10);
+        const inOutCode = parseInt(parts[3] ?? "255", 10);
 
-        if (isNaN(memberId) || memberId < 1 || !punchTime) continue;
+        if (!empCode || !punchTimeStr) continue;
 
-        const punchType   = INOUT[inOutCode]   ?? "in";
-        const verifyMethod = VERIFY[verifyCode] ?? "fingerprint";
+        const punchTime = parseISTPunch(punchTimeStr);
+        if (!punchTime) continue;
 
-        // ── Deduplication — skip if already processed ────────────────────
-        const [exists] = await db
-          .select({ id: zktecoPunchLogsTable.id })
-          .from(zktecoPunchLogsTable)
-          .where(and(
-            eq(zktecoPunchLogsTable.memberId,  memberId),
-            eq(zktecoPunchLogsTable.punchTime, punchTime)
-          ))
-          .limit(1);
+        const punchState = Number.isFinite(inOutCode) ? inOutCode : 255;
+        const easyTimeId = await nextAdmsEasyTimeId();
 
-        if (exists) continue;
+        const result = await storeRawPunch({
+          easyTimeId,
+          empCode,
+          punchTime,
+          punchState,
+          verifyType: VERIFY[verifyCode] ?? verifyCode ?? 1,
+          codeMap,
+        });
 
-        // ── Find employee by Member ID (MEM 1 = zktecoMemberId 1) ────────
-        const [employee] = await db
-          .select({ id: employeesTable.id })
-          .from(employeesTable)
-          .where(eq(employeesTable.zktecoMemberId, memberId))
-          .limit(1);
-
-        if (!employee) {
-          console.warn(`[ZKTeco] MEM ${memberId} not mapped to any employee — skipping`);
-          // Still log the punch so we don't re-process it
-          await db.insert(zktecoPunchLogsTable).values({
-            id: crypto.randomUUID(), memberId, punchTime, punchType, verifyMethod,
-          }).onDuplicateKeyUpdate({ set: { punchType } });
-          continue;
-        }
-
-        // ── Record the punch (dedup log) ─────────────────────────────────
-        await db.insert(zktecoPunchLogsTable).values({
-          id: crypto.randomUUID(), memberId, punchTime, punchType, verifyMethod,
-        }).onDuplicateKeyUpdate({ set: { punchType } });
-
-        // ── Parse date + time ────────────────────────────────────────────
-        // Device sends IST (UTC+5:30) — append offset so JS parses correctly
-        const [datePart] = punchTime.split(" ");
-        if (!datePart) continue;
-        const punchDate = new Date(punchTime.replace(" ", "T") + "+05:30");
-
-        // ── Upsert attendance record ──────────────────────────────────────
-        const [existing] = await db
-          .select()
-          .from(attendanceRecordsTable)
-          .where(and(
-            eq(attendanceRecordsTable.employeeId, employee.id),
-            eq(attendanceRecordsTable.date,       datePart)
-          ))
-          .limit(1);
-
-        if (!existing) {
-          // First punch of the day — create the attendance record
-          await db.insert(attendanceRecordsTable).values({
-            id:         crypto.randomUUID(),
-            employeeId: employee.id,
-            date:       datePart,
-            clockIn:    punchType === "in"  ? punchDate : null,
-            clockOut:   punchType === "out" ? punchDate : null,
-            type:       "wfo",
-          });
-        } else {
-          // Subsequent punches:
-          //   "in"  → record the first clock-in only (preserve original entry time)
-          //   "out" → always overwrite with the latest clock-out (handles lunch breaks etc.)
-          if (punchType === "in" && !existing.clockIn) {
-            await db.update(attendanceRecordsTable)
-              .set({ clockIn: punchDate })
-              .where(eq(attendanceRecordsTable.id, existing.id));
-          } else if (punchType === "out") {
-            await db.update(attendanceRecordsTable)
-              .set({ clockOut: punchDate })
-              .where(eq(attendanceRecordsTable.id, existing.id));
+        if (result.inserted && result.employeeId && result.date) {
+          const key = `${result.employeeId}|${result.date}`;
+          affected.set(key, { employeeId: result.employeeId, date: result.date });
+          console.log(`[ZKTeco] ${empCode} → emp ${result.employeeId} | punch at ${punchTimeStr}`);
+        } else if (result.reason === "visitor") {
+          console.log(`[ZKTeco] Skipping visitor code: ${empCode}`);
+        } else if (result.inserted && !result.employeeId) {
+          console.warn(`[ZKTeco] Stored unmapped emp code "${empCode}" at ${punchTimeStr}`);
+        } else if (result.reason === "dup_emp_time" || result.reason === "dup_id" || result.reason === "dup_constraint") {
+          // Already ingested (likely via API poll) — still try re-derive if we can resolve the employee
+          const empId = resolveEmployeeId(empCode, codeMap);
+          if (empId) {
+            const datePart = punchTimeStr.split(" ")[0];
+            if (datePart) affected.set(`${empId}|${datePart}`, { employeeId: empId, date: datePart });
           }
         }
-
-        console.log(`[ZKTeco] MEM ${memberId} → emp ${employee.id} | ${punchType} at ${punchTime}`);
       } catch (err) {
         console.error("[ZKTeco] Error processing punch line:", line, err);
+      }
+    }
+
+    // Re-derive attendance for affected employee+date pairs
+    for (const { employeeId, date } of affected.values()) {
+      try {
+        await reDeriveAttendanceForDay(employeeId, date);
+      } catch (err) {
+        console.error(`[ZKTeco] Re-derive failed for ${employeeId} ${date}:`, err);
       }
     }
 
@@ -179,7 +133,6 @@ export async function handleAdmsPush(req: Request, res: Response) {
   return res.send("OK");
 }
 
-// GET /iclock/ping — heartbeat (mounted in app.ts)
 router.get("/zkteco/ping", (_req, res) => res.send("OK"));
 
 export default router;

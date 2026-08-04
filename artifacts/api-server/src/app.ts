@@ -61,13 +61,19 @@ scheduleDailyIST(10, notifyForgottenClockIn, 15);           // 10:15 AM — forg
 scheduleDailyIST(19, notifyForgottenClockOut, 15);          // 7:15 PM  — forgot to clock out
 
 // Biometric (EasyTime Pro) attendance sync — pull punches every 15 minutes.
-// Only runs when EASYTIME_URL / EASYTIME_USERNAME / EASYTIME_PASSWORD are set.
+// Only runs when EASYTIME_URL / EASYTIME_USER / EASYTIME_PASS are set.
 if (biometricConfig().configured) {
   const runBiometricSync = () =>
     syncBiometricPunches()
       .then((s) => {
         if (!s.ok) console.error("[biometric] sync error:", s.error);
-        else console.log(`[biometric] sync: ${s.created} created, ${s.updated} updated, ${s.skippedUnmapped} unmapped`);
+        else {
+          console.log(
+            `[biometric] sync: ${s.created} created, ${s.updated} updated, ` +
+            `${s.daysReprocessed} days, ${s.sessionsCreated} sessions, ` +
+            `${s.breaksCreated} breaks, ${s.skippedUnmapped} unmapped`,
+          );
+        }
       })
       .catch((e) => console.error("[biometric] sync threw:", e));
   // Kick off shortly after boot, then every 15 minutes.

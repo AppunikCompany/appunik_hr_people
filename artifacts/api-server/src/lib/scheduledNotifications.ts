@@ -3,7 +3,7 @@
  * Emails are sent directly via ZeptoMail (no automation-rule DB lookup needed).
  */
 
-import { db, employeesTable, attendanceRecordsTable, leaveRequestsTable } from "@workspace/db";
+import { db, employeesTable, attendanceRecordsTable, leaveRequestsTable, biometricPunchLogsTable } from "@workspace/db";
 import { eq, inArray, and, lte, gte, isNull } from "drizzle-orm";
 import { notifyUser } from "./notify";
 import { sendEmail } from "./mailer";
@@ -37,7 +37,7 @@ export async function notifyForgottenClockIn(): Promise<void> {
   try {
     const today = todayIST();
 
-    const [activeEmps, todayRecords, onLeaveToday] = await Promise.all([
+    const [activeEmps, todayRecords, onLeaveToday, biometricToday] = await Promise.all([
       db.select({
         id: employeesTable.id,
         userId: employeesTable.userId,
@@ -61,15 +61,31 @@ export async function notifyForgottenClockIn(): Promise<void> {
             gte(leaveRequestsTable.endDate, today),
           ),
         ),
+
+      // Employees with biometric punches today (sync may not have derived yet)
+      db.select({
+        employeeId: biometricPunchLogsTable.employeeId,
+      })
+        .from(biometricPunchLogsTable)
+        .where(
+          and(
+            gte(biometricPunchLogsTable.punchTime, new Date(`${today}T00:00:00+05:30`)),
+            lte(biometricPunchLogsTable.punchTime, new Date(`${today}T23:59:59.999+05:30`)),
+          ),
+        ),
     ]);
 
     const checkedInIds = new Set(todayRecords.map((r) => r.employeeId));
     const onLeaveIds = new Set(onLeaveToday.map((r) => r.employeeId));
+    const biometricIds = new Set(
+      biometricToday.map((r) => r.employeeId).filter((id): id is string => !!id),
+    );
 
     let notified = 0;
     for (const emp of activeEmps) {
       if (checkedInIds.has(emp.id)) continue; // already marked attendance
       if (onLeaveIds.has(emp.id)) continue;   // on approved leave
+      if (biometricIds.has(emp.id)) continue; // device punches present — wait for sync/auto-derive
 
       // In-app notification
       if (emp.userId) {
@@ -122,8 +138,13 @@ export async function notifyForgottenClockOut(): Promise<void> {
     const today = todayIST();
 
     // Find all attendance records for today with no clock-out (WFO clocked in, or WFH not checked out)
+    // Skip biometric — those are closed by auto-clockout at 22:00, not manual checkout.
     const openRecords = await db
-      .select({ employeeId: attendanceRecordsTable.employeeId, type: attendanceRecordsTable.type })
+      .select({
+        employeeId: attendanceRecordsTable.employeeId,
+        type: attendanceRecordsTable.type,
+        source: attendanceRecordsTable.source,
+      })
       .from(attendanceRecordsTable)
       .where(
         and(
@@ -133,9 +154,9 @@ export async function notifyForgottenClockOut(): Promise<void> {
         ),
       );
 
-    // For WFO: must have clocked in (clockIn is not null is handled below)
-    // We already have the records — filter WFO to only those who actually clocked in
-    const needsReminder = openRecords.filter((r) => r.type === "wfh" || r.type === "wfo");
+    const needsReminder = openRecords.filter(
+      (r) => r.source !== "biometric" && (r.type === "wfh" || r.type === "wfo"),
+    );
     const empIds = needsReminder.map((r) => r.employeeId);
 
     if (empIds.length === 0) {

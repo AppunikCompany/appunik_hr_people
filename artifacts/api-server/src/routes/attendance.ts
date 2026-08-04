@@ -10,12 +10,17 @@ import {
   departmentsTable,
   appConfigTable,
   leaveRequestsTable,
+  biometricPunchLogsTable,
 } from "@workspace/db";
-import { eq, and, inArray, lte, gte, isNull, desc, or } from "drizzle-orm";
+import { eq, and, inArray, lte, gte, isNull, desc, sql, lt } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { resolveEmployeeId, canReadEmployee, isPrivileged } from "../lib/ownership";
 import { fireAutomationEvent } from "../lib/automations";
 import { notifyEmployee } from "../lib/notify";
+import {
+  getDerivedDayView,
+  autoCloseBiometricSession,
+} from "../lib/biometricSync";
 
 const router: IRouter = Router();
 
@@ -229,6 +234,26 @@ router.get("/attendance/today", requireAuth, async (req, res): Promise<void> => 
       .filter((b) => b.durationMinutes != null)
       .reduce((sum, b) => sum + (b.durationMinutes ?? 0), 0);
 
+    // Biometric punch timeline (computed from raw punch log)
+    let punchLogs: { time: string; punchState: number; verifyType: number; direction: string }[] = [];
+    let sessions: { in: string; out: string | null; durationMinutes: number | null }[] = [];
+    try {
+      const derived = await getDerivedDayView(employeeId, today);
+      punchLogs = derived.punchLogs.map((p) => ({
+        time: p.time.toISOString(),
+        punchState: p.punchState,
+        verifyType: p.verifyType,
+        direction: p.direction,
+      }));
+      sessions = derived.sessions.map((s) => ({
+        in: s.in.toISOString(),
+        out: s.out?.toISOString() ?? null,
+        durationMinutes: s.durationMinutes,
+      }));
+    } catch {
+      // Non-fatal — attendance record still returned without punch timeline
+    }
+
     res.json({
       ...record,
       isOnBreak: !!openBreak,
@@ -242,7 +267,10 @@ router.get("/attendance/today", requireAuth, async (req, res): Promise<void> => 
           breakStart: b.breakStart?.toISOString() ?? null,
           breakEnd: b.breakEnd?.toISOString() ?? null,
           durationMinutes: b.durationMinutes ?? null,
+          source: b.source ?? "manual",
         })),
+      punchLogs,
+      sessions,
     });
   } catch (e) {
     res.status(500).json({ error: String(e) });
@@ -283,6 +311,7 @@ router.post("/attendance/break-start", requireAuth, async (req, res): Promise<vo
       employeeId,
       date: today,
       breakStart: new Date(),
+      source: "manual",
     });
 
     const [created] = await db.select().from(attendanceBreaksTable).where(eq(attendanceBreaksTable.id, breakId));
@@ -380,6 +409,26 @@ router.get("/attendance/team", requireAuth, async (req, res) => {
     const records = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.date, today));
     const recordMap = new Map(records.map((r) => [r.employeeId, r]));
 
+    // Punch counts for today (IST calendar day)
+    const dayStart = new Date(`${today}T00:00:00+05:30`);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const punchRows = await db
+      .select({
+        employeeId: biometricPunchLogsTable.employeeId,
+        cnt: sql<number>`count(*)`.mapWith(Number),
+      })
+      .from(biometricPunchLogsTable)
+      .where(
+        and(
+          gte(biometricPunchLogsTable.punchTime, dayStart),
+          lt(biometricPunchLogsTable.punchTime, dayEnd),
+        ),
+      )
+      .groupBy(biometricPunchLogsTable.employeeId);
+    const punchCountMap = new Map(
+      punchRows.filter((r) => r.employeeId).map((r) => [r.employeeId!, r.cnt]),
+    );
+
     // Cross-reference approved leaves so on-leave employees show as "on_leave" not "absent"
     const todayLeaves = await db
       .select({ employeeId: leaveRequestsTable.employeeId })
@@ -408,6 +457,7 @@ router.get("/attendance/team", requireAuth, async (req, res) => {
           status: rec ? rec.type : onLeaveIds.has(emp.id) ? "on_leave" : "absent",
           clockIn: rec?.clockIn?.toISOString() ?? null,
           type: rec?.type ?? null,
+          punchCount: punchCountMap.get(emp.id) ?? 0,
         };
       })
     );
@@ -425,6 +475,38 @@ router.get("/attendance/daily", requireAuth, requireRole("super_admin", "hr_admi
     const employeeList = await db.select().from(employeesTable).where(eq(employeesTable.status, "active"));
     const records = await db.select().from(attendanceRecordsTable).where(eq(attendanceRecordsTable.date, date));
     const recordMap = new Map(records.map((r) => [r.employeeId, r]));
+
+    const dayStart = new Date(`${date}T00:00:00+05:30`);
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const punchRows = await db
+      .select({
+        employeeId: biometricPunchLogsTable.employeeId,
+        cnt: sql<number>`count(*)`.mapWith(Number),
+      })
+      .from(biometricPunchLogsTable)
+      .where(
+        and(
+          gte(biometricPunchLogsTable.punchTime, dayStart),
+          lt(biometricPunchLogsTable.punchTime, dayEnd),
+        ),
+      )
+      .groupBy(biometricPunchLogsTable.employeeId);
+    const punchCountMap = new Map(
+      punchRows.filter((r) => r.employeeId).map((r) => [r.employeeId!, r.cnt]),
+    );
+
+    // Session counts from derived view for employees who have punches
+    const sessionCountMap = new Map<string, number>();
+    await Promise.all(
+      [...punchCountMap.keys()].map(async (empId) => {
+        try {
+          const derived = await getDerivedDayView(empId, date);
+          sessionCountMap.set(empId, derived.sessions.length);
+        } catch {
+          sessionCountMap.set(empId, 0);
+        }
+      }),
+    );
 
     const onLeaveRows = await db
       .select({ employeeId: leaveRequestsTable.employeeId })
@@ -453,6 +535,8 @@ router.get("/attendance/daily", requireAuth, requireRole("super_admin", "hr_admi
         hoursWorked: rec?.hoursWorked ?? null,
         isLate: rec?.isLate ?? false,
         isHalfDay: rec?.isHalfDay ?? false,
+        punchCount: punchCountMap.get(emp.id) ?? 0,
+        sessions: sessionCountMap.get(emp.id) ?? 0,
       };
     });
 
@@ -725,8 +809,9 @@ router.patch("/attendance/regularization/:id", requireAuth, requireRole("super_a
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AUTO CLOCK-OUT JOB
-// Finds every WFO record for today (IST) that has a clock-in but no clock-out,
-// closes any open breaks, and sets clockOut = 22:00 IST with full hours calc.
+// Finds every WFO record for today (IST) that has a clock-in but no clock-out.
+// Biometric records: close the open session at 22:00 IST (sum of session durations).
+// Manual records: close open breaks and compute hours as before.
 // Called by app.ts at 10 PM IST every day.
 // ─────────────────────────────────────────────────────────────────────────────
 export async function autoClockOutMissed(): Promise<void> {
@@ -738,12 +823,7 @@ export async function autoClockOutMissed(): Promise<void> {
     }).format(new Date());
 
     // Set clockOut to exactly 22:00:00 IST
-    const autoClockOutIST = (() => {
-      const [y, m, d] = todayIST.split("-").map(Number);
-      // Build 22:00 IST as a UTC Date
-      const ist22 = new Date(`${todayIST}T22:00:00+05:30`);
-      return ist22;
-    })();
+    const autoClockOutIST = new Date(`${todayIST}T22:00:00+05:30`);
 
     // Find all WFO records for today without a clock-out
     const openRecords = await db
@@ -765,7 +845,22 @@ export async function autoClockOutMissed(): Promise<void> {
     let closed = 0;
     for (const record of openRecords) {
       try {
-        // 1. Close any open break at 22:00 IST
+        // Biometric: close open session at 22:00 without full re-derive
+        if (record.source === "biometric") {
+          const ok = await autoCloseBiometricSession(
+            {
+              id: record.id,
+              employeeId: record.employeeId,
+              date: record.date,
+              notes: record.notes,
+            },
+            autoClockOutIST,
+          );
+          if (ok) closed++;
+          continue;
+        }
+
+        // Manual / web: close any open break at 22:00 IST
         const [openBreak] = await db
           .select()
           .from(attendanceBreaksTable)
@@ -778,7 +873,6 @@ export async function autoClockOutMissed(): Promise<void> {
             .where(eq(attendanceBreaksTable.id, openBreak.id));
         }
 
-        // 2. Total break time (including the one just closed)
         const allBreaks = await db
           .select()
           .from(attendanceBreaksTable)
@@ -789,7 +883,6 @@ export async function autoClockOutMissed(): Promise<void> {
           return sum;
         }, 0);
 
-        // 3. Calculate net hours worked
         const rawMs = record.clockIn
           ? autoClockOutIST.getTime() - new Date(record.clockIn).getTime()
           : 0;
@@ -797,7 +890,6 @@ export async function autoClockOutMissed(): Promise<void> {
         const hoursWorked = netMs / 3600000;
         const isHalfDay = hoursWorked > 0 && hoursWorked < 4;
 
-        // 4. Save auto-checkout
         await db.update(attendanceRecordsTable)
           .set({
             clockOut: autoClockOutIST,

@@ -55,6 +55,8 @@ export const attendanceBreaksTable = mysqlTable("people_attendance_breaks", {
   breakStart: timestamp("break_start").notNull(),
   breakEnd: timestamp("break_end"),
   durationMinutes: double("duration_minutes"),
+  // "biometric" = derived from punch gaps (sync may replace); "manual" = employee UI (never touch)
+  source: varchar("source", { length: 20 }).default("manual"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
