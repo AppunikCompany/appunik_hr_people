@@ -13,7 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { formatDate } from "@/lib/utils";
-import { Plus, Check, X, Calendar, Info, Edit2, Download, Trash2, RotateCcw, Upload, AlertTriangle, BanknoteIcon, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { Plus, Check, X, Calendar, Info, Edit2, Download, Trash2, RotateCcw, Upload, AlertTriangle, BanknoteIcon, ChevronUp, ChevronDown, ChevronsUpDown, Ban } from "lucide-react";
 
 function SortIcon({ col, sortKey, sortDir }: { col: string; sortKey: string; sortDir: "asc" | "desc" }) {
   if (sortKey !== col) return <ChevronsUpDown className="w-3 h-3 ml-1 opacity-30 inline-block" />;
@@ -511,6 +511,129 @@ function RejectDialog({ req, onClose }: { req: any; onClose: () => void }) {
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={() => mutation.mutate()} disabled={mutation.isPending} variant="destructive">
             {mutation.isPending ? "Rejecting..." : "Reject"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Request Cancellation Dialog (employee, or HR on their behalf) ───────────────
+function RequestCancellationDialog({ req, onClose }: { req: any; onClose: () => void }) {
+  const [reason, setReason] = useState("");
+  const qc = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      fetchApi(`/leave/requests/${req.id}/request-cancellation`, {
+        method: "POST",
+        body: JSON.stringify({ reason: reason.trim() || undefined }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leave-requests"] });
+      toast.success("Cancellation requested — awaiting HR review");
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open={!!req} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Request Leave Cancellation</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{req?.employeeName}</span> — {req?.leaveTypeName}
+            <br />
+            {req && <span className="text-xs">{formatDate(req.startDate)} – {formatDate(req.endDate)} ({req.days} {req.days === 1 ? "day" : "days"})</span>}
+          </div>
+          <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800 flex items-start gap-2">
+            <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+            <span>This leave is already approved. HR will review your cancellation request before it takes effect and your balance is restored.</span>
+          </div>
+          <div>
+            <Label>Reason (optional)</Label>
+            <Textarea
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="Why do you no longer need this leave?"
+              className="mt-1"
+              rows={2}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Back</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending ? "Submitting..." : "Submit Request"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Review Cancellation Dialog (HR/admin/manager — approve or reject) ───────────
+function ReviewCancellationDialog({ req, onClose }: { req: any; onClose: () => void }) {
+  const [note, setNote] = useState("");
+  const qc = useQueryClient();
+
+  const approveMutation = useMutation({
+    mutationFn: () => fetchApi(`/leave/requests/${req.id}/approve-cancellation`, { method: "POST", body: JSON.stringify({ note: note.trim() || undefined }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leave-requests"] });
+      qc.invalidateQueries({ queryKey: ["leave-balances"] });
+      toast.success("Cancellation approved — balance restored");
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: () => fetchApi(`/leave/requests/${req.id}/reject-cancellation`, { method: "POST", body: JSON.stringify({ note: note.trim() || undefined }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leave-requests"] });
+      toast.success("Cancellation request rejected — leave remains approved");
+      onClose();
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const pending = approveMutation.isPending || rejectMutation.isPending;
+
+  return (
+    <Dialog open={!!req} onOpenChange={onClose}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader><DialogTitle>Review Cancellation Request</DialogTitle></DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="text-sm text-muted-foreground">
+            <span className="font-medium text-foreground">{req?.employeeName}</span> — {req?.leaveTypeName}
+            <br />
+            {req && <span className="text-xs">{formatDate(req.startDate)} – {formatDate(req.endDate)} ({req.days} {req.days === 1 ? "day" : "days"})</span>}
+          </div>
+          {req?.cancellationReason && (
+            <div className="rounded-md bg-secondary px-3 py-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Employee's reason: </span>{req.cancellationReason}
+            </div>
+          )}
+          <div>
+            <Label>Note (optional)</Label>
+            <Textarea
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="Add a note for the employee..."
+              className="mt-1"
+              rows={2}
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Back</Button>
+          <Button variant="destructive" onClick={() => rejectMutation.mutate()} disabled={pending}>
+            {rejectMutation.isPending ? "Rejecting..." : "Reject"}
+          </Button>
+          <Button onClick={() => approveMutation.mutate()} disabled={pending} className="bg-green-600 hover:bg-green-700 text-white">
+            {approveMutation.isPending ? "Approving..." : "Approve Cancellation"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1351,9 +1474,14 @@ export default function Leave() {
   const [approveTarget, setApproveTarget] = useState<any>(null);
   const [rejectTarget, setRejectTarget] = useState<any>(null);
   const [uploadDocTarget, setUploadDocTarget] = useState<any>(null);
+  const [requestCancelTarget, setRequestCancelTarget] = useState<any>(null);
+  const [reviewCancelTarget, setReviewCancelTarget] = useState<any>(null);
   const { data: requests, isLoading } = useLeaveRequests(status ? { status } : undefined);
   const { data: currentUser } = useCurrentUser();
   const isPrivileged = ["super_admin", "hr_admin"].includes(currentUser?.role ?? "");
+  // Matches the backend's requireRole for approve/reject-cancellation — manager included
+  const canReviewCancellation = ["super_admin", "hr_admin", "manager"].includes(currentUser?.role ?? "");
+  const todayStr = new Date().toISOString().split("T")[0];
   const qc = useQueryClient();
 
   const handleSort = (key: string) => {
@@ -1491,10 +1619,17 @@ export default function Leave() {
                       </td>
                       <td className="px-5 py-3 text-center">{req.days}</td>
                       <td className="px-5 py-3 text-muted-foreground max-w-xs truncate">{req.reason ?? "—"}</td>
-                      <td className="px-5 py-3"><StatusBadge status={req.status} /></td>
+                      <td className="px-5 py-3">
+                        <StatusBadge status={req.status} />
+                        {req.cancellationStatus === "pending" && (
+                          <span className="ml-1.5 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                            Cancellation Requested
+                          </span>
+                        )}
+                      </td>
                       <td className="px-5 py-3">
                         <div className="flex gap-1">
-                          {(req.status === "pending" || req.status === "lop") && (
+                          {(req.status === "pending" || req.status === "lop") && !req.approvedById && (
                             <>
                               <Button size="sm" variant="outline" title="Approve" className="text-green-600 hover:text-green-700 hover:bg-green-50 h-7 px-2" onClick={() => setApproveTarget(req)}>
                                 <Check className="w-3.5 h-3.5" />
@@ -1516,6 +1651,16 @@ export default function Leave() {
                                 <RotateCcw className="w-3.5 h-3.5" />
                               </Button>
                             </>
+                          )}
+                          {req.approvedById && (req.status === "approved" || req.status === "lop") && req.cancellationStatus !== "pending" && req.startDate > todayStr && (
+                            <Button size="sm" variant="outline" title="Request Cancellation" className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 h-7 px-2 gap-1 text-xs" onClick={() => setRequestCancelTarget(req)}>
+                              <Ban className="w-3.5 h-3.5" /> Cancel
+                            </Button>
+                          )}
+                          {req.cancellationStatus === "pending" && canReviewCancellation && (
+                            <Button size="sm" variant="outline" title="Review Cancellation Request" className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 h-7 px-2 gap-1 text-xs" onClick={() => setReviewCancelTarget(req)}>
+                              <Ban className="w-3.5 h-3.5" /> Review
+                            </Button>
                           )}
                         </div>
                       </td>
@@ -1556,6 +1701,8 @@ export default function Leave() {
       {approveTarget && <ApproveDialog req={approveTarget} onClose={() => setApproveTarget(null)} />}
       {rejectTarget && <RejectDialog req={rejectTarget} onClose={() => setRejectTarget(null)} />}
       {uploadDocTarget && <UploadDocDialog req={uploadDocTarget} onClose={() => setUploadDocTarget(null)} />}
+      {requestCancelTarget && <RequestCancellationDialog req={requestCancelTarget} onClose={() => setRequestCancelTarget(null)} />}
+      {reviewCancelTarget && <ReviewCancellationDialog req={reviewCancelTarget} onClose={() => setReviewCancelTarget(null)} />}
 
 
     </PageContainer>

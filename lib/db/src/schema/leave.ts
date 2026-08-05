@@ -49,6 +49,13 @@ export const leaveRequestsTable = mysqlTable("people_leave_requests", {
   managerComment: text("manager_comment"),
   approvedById: varchar("approved_by_id", { length: 36 }),
   approvedByRole: varchar("approved_by_role", { length: 30 }), // "manager" | "hr_admin" | "super_admin"
+  // ── Post-approval cancellation request (employee requests, HR approves/rejects) ──
+  cancellationStatus: varchar("cancellation_status", { length: 20 }), // null | "pending" | "approved" | "rejected"
+  cancellationReason: text("cancellation_reason"),
+  cancellationRequestedAt: timestamp("cancellation_requested_at"),
+  cancellationReviewedById: varchar("cancellation_reviewed_by_id", { length: 36 }),
+  cancellationReviewNote: text("cancellation_review_note"),
+  cancellationReviewedAt: timestamp("cancellation_reviewed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });

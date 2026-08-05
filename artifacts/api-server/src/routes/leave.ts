@@ -711,7 +711,9 @@ router.post("/leave/requests/:id/approve", requireAuth, requireRole("super_admin
     const { comment, approvedByRole } = req.body as { comment?: string; approvedByRole?: string };
     const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
-    if (!["pending", "lop"].includes(existing.status)) {
+    // "lop" is reused pre- and post-approval — approvedById is the real signal that
+    // this was already approved (and its balance already deducted once).
+    if (!["pending", "lop"].includes(existing.status) || existing.approvedById) {
       res.status(400).json({ error: "Only pending leave requests can be approved" }); return;
     }
 
@@ -789,7 +791,7 @@ router.post("/leave/requests/:id/reject", requireAuth, requireRole("super_admin"
     const { comment, approvedByRole } = req.body as { comment?: string; approvedByRole?: string };
     const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
-    if (!["pending", "lop"].includes(existing.status)) {
+    if (!["pending", "lop"].includes(existing.status) || existing.approvedById) {
       res.status(400).json({ error: "Only pending leave requests can be rejected" }); return;
     }
     const approverId = req.user!.id;
@@ -832,13 +834,16 @@ router.post("/leave/requests/:id/reject", requireAuth, requireRole("super_admin"
   }
 });
 
-// ── Cancel a pending leave request ──
+// ── Cancel a leave request that has NOT been approved yet ──
+// "lop" is reused both pre- and post-approval (see approve route), so approvedById
+// is the real signal — a "lop" request that's already been approved must go through
+// the request/approve-cancellation flow below instead, so its deducted balance is restored.
 router.delete("/leave/requests/:id", requireAuth, async (req, res): Promise<void> => {
   try {
     const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
-    if (!["pending", "lop"].includes(existing.status)) {
-      res.status(400).json({ error: "Only pending leave requests can be cancelled" }); return;
+    if (!["pending", "pending_doc", "lop"].includes(existing.status) || existing.approvedById) {
+      res.status(400).json({ error: "This leave has already been approved — request cancellation instead" }); return;
     }
     // Employees can only cancel their own; privileged roles can cancel any
     const userId = req.user!.id;
@@ -854,12 +859,169 @@ router.delete("/leave/requests/:id", requireAuth, async (req, res): Promise<void
   }
 });
 
+// ── Request cancellation of an already-APPROVED, future-dated leave ──
+// Employee (or privileged, on their behalf) submits a request; HR/admin/manager
+// approves or rejects it via the two endpoints below. Nothing changes on the
+// leave itself until HR decides — the balance stays deducted until approved.
+router.post("/leave/requests/:id/request-cancellation", requireAuth, async (req, res): Promise<void> => {
+  try {
+    const { reason } = req.body as { reason?: string };
+    const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+
+    const userId = req.user!.id;
+    const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+    const privileged = ["super_admin", "hr_admin", "it_admin", "manager"].includes(req.user!.role ?? "");
+    if (!privileged && emp?.id !== existing.employeeId) {
+      res.status(403).json({ error: "Access denied" }); return;
+    }
+
+    if (!existing.approvedById) {
+      res.status(400).json({ error: "This leave isn't approved yet — cancel it directly instead" }); return;
+    }
+    if (existing.status === "cancelled" || existing.status === "rejected") {
+      res.status(400).json({ error: "This leave is no longer active" }); return;
+    }
+    if (existing.cancellationStatus === "pending") {
+      res.status(400).json({ error: "A cancellation request is already pending review" }); return;
+    }
+    const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+    if (existing.startDate <= todayStr) {
+      res.status(400).json({ error: "Only future leaves (not yet started) can be cancelled this way — contact HR for an in-progress or past leave" }); return;
+    }
+
+    await db.update(leaveRequestsTable).set({
+      cancellationStatus: "pending",
+      cancellationReason: reason?.trim() || null,
+      cancellationRequestedAt: new Date(),
+      cancellationReviewedById: null,
+      cancellationReviewNote: null,
+      cancellationReviewedAt: null,
+    }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+
+    const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    const [reqEmp] = await db.select().from(employeesTable).where(eq(employeesTable.id, existing.employeeId));
+    const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, existing.leaveTypeId));
+
+    fireAutomationEvent({
+      event: "leave.cancellation_requested",
+      employeeId: existing.employeeId,
+      variables: { leaveType: lt?.name ?? "", startDate: existing.startDate, endDate: existing.endDate, days: String(existing.days) },
+    }).catch(console.error);
+
+    const empName = reqEmp ? `${reqEmp.firstName} ${reqEmp.lastName}` : "An employee";
+    notifyHrAdmins({
+      type: "leave.cancellation_requested",
+      title: `Cancellation requested — ${empName}`,
+      body: `${empName} requested to cancel their ${lt?.name ?? "leave"} (${existing.startDate} – ${existing.endDate}, ${existing.days}d).`,
+      link: "/leave",
+    }).catch(console.error);
+
+    res.json(request);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── HR approves a pending cancellation request — restores the leave balance ──
+router.post("/leave/requests/:id/approve-cancellation", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res): Promise<void> => {
+  try {
+    const { note } = req.body as { note?: string };
+    const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (existing.cancellationStatus !== "pending") {
+      res.status(400).json({ error: "No pending cancellation request for this leave" }); return;
+    }
+
+    const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, existing.leaveTypeId));
+
+    // Restore balance — mirrors the inverse of the deduction made at approval time.
+    // Explicit LWP never deducted anything, so there's nothing to restore.
+    if (!isLwpLeaveType(lt)) {
+      const year = new Date().getFullYear();
+      const [bal] = await db.select().from(leaveBalancesTable)
+        .where(and(eq(leaveBalancesTable.employeeId, existing.employeeId), eq(leaveBalancesTable.leaveTypeId, existing.leaveTypeId), eq(leaveBalancesTable.year, year)));
+      if (bal) {
+        await db.update(leaveBalancesTable)
+          .set({ used: Math.max(0, bal.used - existing.days), balance: bal.balance + existing.days })
+          .where(eq(leaveBalancesTable.id, bal.id));
+      }
+    }
+
+    await db.update(leaveRequestsTable).set({
+      status: "cancelled",
+      cancellationStatus: "approved",
+      cancellationReviewedById: req.user!.id,
+      cancellationReviewNote: note?.trim() || null,
+      cancellationReviewedAt: new Date(),
+    }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+
+    const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+
+    fireAutomationEvent({
+      event: "leave.cancellation_approved",
+      employeeId: existing.employeeId,
+      variables: { leaveType: lt?.name ?? "", startDate: existing.startDate, endDate: existing.endDate, days: String(existing.days) },
+    }).catch(console.error);
+
+    notifyEmployee(existing.employeeId, {
+      type: "leave.cancellation_approved",
+      title: "Leave cancellation approved",
+      body: `Your ${lt?.name ?? "leave"} from ${existing.startDate} to ${existing.endDate} has been cancelled and your balance restored.`,
+      link: "/leave",
+    }).catch(console.error);
+
+    res.json(request);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+// ── HR rejects a pending cancellation request — leave stays approved as-is ──
+router.post("/leave/requests/:id/reject-cancellation", requireAuth, requireRole("super_admin", "hr_admin", "manager"), async (req, res): Promise<void> => {
+  try {
+    const { note } = req.body as { note?: string };
+    const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+    if (existing.cancellationStatus !== "pending") {
+      res.status(400).json({ error: "No pending cancellation request for this leave" }); return;
+    }
+
+    await db.update(leaveRequestsTable).set({
+      cancellationStatus: "rejected",
+      cancellationReviewedById: req.user!.id,
+      cancellationReviewNote: note?.trim() || null,
+      cancellationReviewedAt: new Date(),
+    }).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+
+    const [request] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
+    const [lt] = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.id, existing.leaveTypeId));
+
+    fireAutomationEvent({
+      event: "leave.cancellation_rejected",
+      employeeId: existing.employeeId,
+      variables: { leaveType: lt?.name ?? "", startDate: existing.startDate, endDate: existing.endDate },
+    }).catch(console.error);
+
+    notifyEmployee(existing.employeeId, {
+      type: "leave.cancellation_rejected",
+      title: "Leave cancellation request rejected",
+      body: `Your request to cancel ${lt?.name ?? "leave"} from ${existing.startDate} to ${existing.endDate} was not approved.${note ? ` Reason: ${note}` : ""}`,
+      link: "/leave",
+    }).catch(console.error);
+
+    res.json(request);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
 // ── Edit a pending leave request ──
 router.patch("/leave/requests/:id", requireAuth, async (req, res): Promise<void> => {
   try {
     const [existing] = await db.select().from(leaveRequestsTable).where(eq(leaveRequestsTable.id, (req.params.id as string)));
     if (!existing) { res.status(404).json({ error: "Not found" }); return; }
-    if (!["pending", "lop"].includes(existing.status)) {
+    if (!["pending", "lop"].includes(existing.status) || existing.approvedById) {
       res.status(400).json({ error: "Only pending leave requests can be edited" }); return;
     }
     const userId = req.user!.id;
