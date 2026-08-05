@@ -17,6 +17,7 @@ import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
 import { PRIVILEGED_ROLES, canReadEmployee } from "../lib/ownership";
 import { notifyAllEmployees } from "../lib/notify";
+import { computeProratedEntitlement } from "../lib/leaveProration";
 
 const router: IRouter = Router();
 
@@ -204,14 +205,15 @@ router.post("/employees/import", requireAuth, requireRole("super_admin", "hr_adm
           });
         const [employee] = await db.select().from(employeesTable).where(eq(employeesTable.id, empId));
 
+        const allocationYear = new Date().getFullYear();
         for (const lt of leaveTypes) {
           const balId = crypto.randomUUID();
           await db.insert(leaveBalancesTable).values({
             id: balId,
             employeeId: employee.id,
             leaveTypeId: lt.id,
-            year: new Date().getFullYear(),
-            balance: lt.maxDaysPerYear,
+            year: allocationYear,
+            balance: computeProratedEntitlement(joiningDate, allocationYear, lt.maxDaysPerYear),
             used: 0,
           }).onDuplicateKeyUpdate({ set: { id: sql`id` } });
         }
@@ -262,6 +264,23 @@ router.post("/employees", requireAuth, requireRole("super_admin", "hr_admin"), a
     await db.insert(employeesTable).values({ ...req.body, id: newEmpId, employeeCode: code });
     const [employee] = await db.select().from(employeesTable).where(eq(employeesTable.id, newEmpId));
     const enriched = await enrichEmployee(employee);
+
+    // Immediately allocate this year's leave balance — prorated by joining date
+    // for anyone joining mid-year (see lib/leaveProration.ts).
+    const allocationYear = new Date().getFullYear();
+    const activeLeaveTypes = await db.select().from(leaveTypesTable).where(eq(leaveTypesTable.isActive, true));
+    if (activeLeaveTypes.length > 0) {
+      await db.insert(leaveBalancesTable).values(
+        activeLeaveTypes.map((lt) => ({
+          id: crypto.randomUUID(),
+          employeeId: employee.id,
+          leaveTypeId: lt.id,
+          year: allocationYear,
+          balance: computeProratedEntitlement(employee.joiningDate, allocationYear, lt.maxDaysPerYear),
+          used: 0,
+        })),
+      );
+    }
 
     fireAutomationEvent({ event: "employee.created", employeeId: employee.id }).catch(console.error);
 

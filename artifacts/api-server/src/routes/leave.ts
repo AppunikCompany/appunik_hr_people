@@ -14,6 +14,7 @@ import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
 import { notifyEmployee, notifyHrAdmins } from "../lib/notify";
 import { resolveEmployeeId, isPrivileged } from "../lib/ownership";
+import { computeProratedEntitlement } from "../lib/leaveProration";
 
 const router: IRouter = Router();
 
@@ -171,7 +172,7 @@ router.post("/leave/balances/allocate-bulk", requireAuth, requireRole("super_adm
     const year = parseInt((req.body as any).year) || new Date().getFullYear();
 
     const [employees, leaveTypes, existingBalances] = await Promise.all([
-      db.select({ id: employeesTable.id, firstName: employeesTable.firstName, lastName: employeesTable.lastName })
+      db.select({ id: employeesTable.id, firstName: employeesTable.firstName, lastName: employeesTable.lastName, joiningDate: employeesTable.joiningDate })
         .from(employeesTable).where(eq(employeesTable.status, "active")),
       db.select().from(leaveTypesTable).where(eq(leaveTypesTable.isActive, true)),
       db.select({ employeeId: leaveBalancesTable.employeeId, leaveTypeId: leaveBalancesTable.leaveTypeId })
@@ -189,7 +190,8 @@ router.post("/leave/balances/allocate-bulk", requireAuth, requireRole("super_adm
             id: crypto.randomUUID(),
             employeeId: emp.id,
             leaveTypeId: lt.id,
-            balance: lt.maxDaysPerYear,
+            // Prorated for anyone joining mid-year; full entitlement for existing employees.
+            balance: computeProratedEntitlement(emp.joiningDate, year, lt.maxDaysPerYear),
             used: 0,
             year,
           });
