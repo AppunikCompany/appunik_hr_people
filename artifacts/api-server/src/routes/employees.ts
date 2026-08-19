@@ -15,7 +15,7 @@ import {
 import { eq, sql, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
-import { PRIVILEGED_ROLES, canReadEmployee } from "../lib/ownership";
+import { PRIVILEGED_ROLES, canReadEmployee, canReadEmployeeDocuments } from "../lib/ownership";
 import { notifyAllEmployees } from "../lib/notify";
 import { computeProratedEntitlement } from "../lib/leaveProration";
 
@@ -359,7 +359,9 @@ router.delete("/employees/:id", requireAuth, requireRole("super_admin", "hr_admi
 
 router.get("/employees/:id/documents", requireAuth, async (req, res): Promise<void> => {
   try {
-    const docs = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.employeeId, (req.params.id as string)));
+    const employeeId = req.params.id as string;
+    if (!(await canReadEmployeeDocuments(req, res, employeeId))) return;
+    const docs = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.employeeId, employeeId));
     res.json(docs);
   } catch (e) {
     res.status(500).json({ error: String(e) });

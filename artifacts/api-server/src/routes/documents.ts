@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { companyDocumentsTable, hrEmployeeLettersTable, employeesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
-import { isPrivileged } from "../lib/ownership";
+import { getRequestEmployeeId, isDocumentAdmin } from "../lib/ownership";
 import { notifyEmployee } from "../lib/notify";
 
 const router: IRouter = Router();
@@ -152,17 +152,13 @@ router.get("/documents/employee", requireAuth, async (req, res) => {
       .from(hrEmployeeLettersTable)
       .orderBy(desc(hrEmployeeLettersTable.createdAt));
 
-    const user = req.user;
     let filtered = rows;
 
-    if (!isPrivileged(req)) {
+    if (!isDocumentAdmin(req)) {
       // Employee sees only their own
-      const [self] = await db
-        .select({ id: employeesTable.id })
-        .from(employeesTable)
-        .where(eq(employeesTable.userId, user?.id ?? ""));
-      if (!self) { res.json([]); return; }
-      filtered = rows.filter((r) => r.employeeId === self.id);
+      const ownEmployeeId = await getRequestEmployeeId(req);
+      if (!ownEmployeeId) { res.json([]); return; }
+      filtered = rows.filter((r) => r.employeeId === ownEmployeeId);
     } else {
       const empId = req.query.employeeId as string | undefined;
       if (empId) filtered = rows.filter((r) => r.employeeId === empId);
@@ -241,12 +237,9 @@ router.get("/documents/employee/:id/download", requireAuth, async (req, res) => 
     if (!doc) { res.status(404).json({ error: "Document not found" }); return; }
 
     // Access check: employee can only download their own documents
-    if (!isPrivileged(req)) {
-      const [self] = await db
-        .select({ id: employeesTable.id })
-        .from(employeesTable)
-        .where(eq(employeesTable.userId, req.user?.id ?? ""));
-      if (!self || self.id !== doc.employeeId) {
+    if (!isDocumentAdmin(req)) {
+      const ownEmployeeId = await getRequestEmployeeId(req);
+      if (!ownEmployeeId || ownEmployeeId !== doc.employeeId) {
         res.status(403).json({ error: "Access denied" });
         return;
       }

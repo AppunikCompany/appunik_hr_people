@@ -9,7 +9,7 @@ import {
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
 import { fireAutomationEvent } from "../lib/automations";
-import { PRIVILEGED_ROLES, resolveEmployeeId } from "../lib/ownership";
+import { PRIVILEGED_ROLES, canReadEmployeeDocuments, resolveEmployeeId } from "../lib/ownership";
 import { notifyEmployee } from "../lib/notify";
 
 const router: IRouter = Router();
@@ -153,6 +153,7 @@ router.delete("/onboarding/checklists/:id", requireAuth, requireRole("super_admi
 router.get("/onboarding/documents/:employeeId", requireAuth, async (req, res): Promise<void> => {
   try {
     const empId = req.params.employeeId as string;
+    if (!(await canReadEmployeeDocuments(req, res, empId))) return;
     const docs = await db.select().from(employeeDocumentsTable).where(eq(employeeDocumentsTable.employeeId, empId));
 
     // Expected document types for onboarding
