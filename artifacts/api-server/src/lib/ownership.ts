@@ -4,9 +4,56 @@ import { employeesTable } from "@workspace/db";
 import { eq, or } from "drizzle-orm";
 
 export const PRIVILEGED_ROLES = new Set(["super_admin", "hr_admin", "it_admin", "manager"]);
+export const DOCUMENT_ADMIN_ROLES = new Set(["super_admin", "hr_admin"]);
 
 export function isPrivileged(req: Request): boolean {
   return PRIVILEGED_ROLES.has(req.user?.role ?? "");
+}
+
+/** Only HR and Super Admin may manage or view documents for other employees. */
+export function isDocumentAdmin(req: Request): boolean {
+  return DOCUMENT_ADMIN_ROLES.has(req.user?.role ?? "");
+}
+
+/** Resolve the employee record linked to the signed-in user. */
+export async function getRequestEmployeeId(req: Request): Promise<string | null> {
+  const userId = req.user?.id;
+  if (!userId) return null;
+
+  const email = req.user?.email;
+  const conditions = email
+    ? or(eq(employeesTable.userId, userId), eq(employeesTable.email, email))
+    : eq(employeesTable.userId, userId);
+
+  const [emp] = await db
+    .select({ id: employeesTable.id, userId: employeesTable.userId })
+    .from(employeesTable)
+    .where(conditions);
+
+  if (!emp) return null;
+
+  if (emp.userId !== userId) {
+    await db.update(employeesTable).set({ userId }).where(eq(employeesTable.id, emp.id));
+  }
+
+  return emp.id;
+}
+
+/** HR/Super Admin may read any employee's documents; others may read only their own. */
+export async function canReadEmployeeDocuments(
+  req: Request,
+  res: Response,
+  employeeId: string,
+): Promise<boolean> {
+  if (isDocumentAdmin(req)) return true;
+
+  const ownEmployeeId = await getRequestEmployeeId(req);
+  if (!ownEmployeeId || ownEmployeeId !== employeeId) {
+    res.status(403).json({ error: "Access denied: you can only view your own documents" });
+    return false;
+  }
+
+  return true;
 }
 
 /**

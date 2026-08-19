@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { letterTemplatesTable, generatedLettersTable, employeesTable, designationsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireRole } from "../middlewares/authMiddleware";
-import { PRIVILEGED_ROLES } from "../lib/ownership";
+import { getRequestEmployeeId, isDocumentAdmin } from "../lib/ownership";
 
 const router: IRouter = Router();
 
@@ -64,14 +64,13 @@ router.delete("/letters/templates/:id", requireAuth, requireRole("super_admin", 
 
 router.get("/letters/generated", requireAuth, async (req, res) => {
   try {
-    const user = req.user;
     let letters = await db.select().from(generatedLettersTable).orderBy(generatedLettersTable.createdAt);
 
-    if (!PRIVILEGED_ROLES.has(user?.role ?? "")) {
+    if (!isDocumentAdmin(req)) {
       // Employee: only see their own letters
-      const [self] = await db.select().from(employeesTable).where(eq(employeesTable.userId, user?.id ?? ""));
-      if (!self) { res.json([]); return; }
-      letters = letters.filter((l) => l.employeeId === self.id);
+      const ownEmployeeId = await getRequestEmployeeId(req);
+      if (!ownEmployeeId) { res.json([]); return; }
+      letters = letters.filter((l) => l.employeeId === ownEmployeeId);
     } else {
       // Admin: optionally filter by employeeId
       const empId = req.query.employeeId as string | undefined;
@@ -148,10 +147,9 @@ router.get("/letters/generated/:id", requireAuth, async (req, res) => {
     if (!letter) { res.status(404).json({ error: "Letter not found" }); return; }
 
     // Access check: employee can only see their own letter
-    const user = req.user;
-    if (!PRIVILEGED_ROLES.has(user?.role ?? "")) {
-      const [self] = await db.select().from(employeesTable).where(eq(employeesTable.userId, user?.id ?? ""));
-      if (!self || self.id !== letter.employeeId) { res.status(403).json({ error: "Forbidden" }); return; }
+    if (!isDocumentAdmin(req)) {
+      const ownEmployeeId = await getRequestEmployeeId(req);
+      if (!ownEmployeeId || ownEmployeeId !== letter.employeeId) { res.status(403).json({ error: "Forbidden" }); return; }
     }
 
     const [emp] = await db.select().from(employeesTable).where(eq(employeesTable.id, letter.employeeId));
